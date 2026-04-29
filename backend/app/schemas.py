@@ -57,5 +57,6 @@ class AnalyzeResponse(BaseModel):
     data_notes: list[str]
     poi_rings: list[dict]
     financials: dict
+    research_bundle: dict | None = None
     scoring: dict
     report: dict

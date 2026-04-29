@@ -28,7 +28,7 @@ const demoLocation: LocationCandidate = {
   longitude: 121.4737,
 };
 
-type LoadingStep = 'idle' | 'poi' | 'finance' | 'report';
+type LoadingStep = 'idle' | 'poi' | 'research' | 'finance' | 'report';
 
 export default function App() {
   const [keyword, setKeyword] = useState('');
@@ -43,6 +43,7 @@ export default function App() {
 
   const loadingLabel = useMemo(() => {
     if (loadingStep === 'poi') return '正在分析 POI';
+    if (loadingStep === 'research') return '正在联网检索公开资料';
     if (loadingStep === 'finance') return '正在测算财务';
     if (loadingStep === 'report') return '正在生成报告';
     return '';
@@ -70,8 +71,9 @@ export default function App() {
     setReport(null);
     setLoadingStep('poi');
     try {
-      window.setTimeout(() => setLoadingStep('finance'), 120);
-      window.setTimeout(() => setLoadingStep('report'), 240);
+      window.setTimeout(() => setLoadingStep('research'), 120);
+      window.setTimeout(() => setLoadingStep('finance'), 240);
+      window.setTimeout(() => setLoadingStep('report'), 360);
       const result = await analyzeLocation({ location: selected, business, financial });
       setReport(result);
     } catch (exc) {
@@ -289,6 +291,44 @@ function ReportPanel({ report }: { report: AnalysisResponse }) {
           </div>
         ))}
       </div>
+
+      {report.research_bundle && (
+        <>
+          <h3>联网调研证据</h3>
+          <div className="research-list">
+            {Object.entries(report.research_bundle.categories).map(([name, category]) => (
+              <article className="research-item" key={name}>
+                <div className="research-head">
+                  <strong>{name}</strong>
+                  <span>{Math.round(category.confidence * 100)}%</span>
+                </div>
+                <p>{category.summary}</p>
+                {category.sources.length > 0 ? (
+                  <ul>
+                    {category.sources.map((source) => (
+                      <li key={`${name}-${source.id}`}>
+                        <a href={source.url} target="_blank" rel="noreferrer">
+                          {source.title || source.url}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="muted">证据不足，需线下核验</span>
+                )}
+              </article>
+            ))}
+          </div>
+          {report.research_bundle.queries.length > 0 && (
+            <div className="query-list">
+              <strong>搜索查询</strong>
+              {report.research_bundle.queries.map((query) => (
+                <span key={query}>{query}</span>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       {report.scoring.business_metrics && (
         <>

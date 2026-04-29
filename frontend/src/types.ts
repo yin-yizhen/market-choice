@@ -21,6 +21,30 @@ export type FinancialInput = {
   other_investment_total: number;
 };
 
+export type ResearchSource = {
+  id: string;
+  title: string;
+  url: string;
+  score?: number | null;
+};
+
+export type ResearchCategory = {
+  status: 'supported' | 'insufficient';
+  summary: string;
+  confidence: number;
+  sources: Array<Pick<ResearchSource, 'id' | 'title' | 'url'>>;
+};
+
+export type ResearchBundle = {
+  required: boolean;
+  provider: string;
+  answer?: string;
+  queries: string[];
+  sources: ResearchSource[];
+  source_count?: number;
+  categories: Record<string, ResearchCategory>;
+};
+
 export type AnalysisResponse = {
   data_notes: string[];
   poi_rings: Array<{
@@ -34,6 +58,7 @@ export type AnalysisResponse = {
     truncated?: boolean;
   }>;
   financials: Record<string, number | string | null>;
+  research_bundle?: ResearchBundle;
   scoring: {
     overall_score: number;
     scores: Record<string, number>;

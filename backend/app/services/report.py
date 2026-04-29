@@ -6,7 +6,13 @@ from urllib import request
 from app.core.config import get_settings
 
 
-def build_report_prompt(payload: dict, poi_rings: list[dict], financials: dict, scoring: dict) -> list[dict]:
+def build_report_prompt(
+    payload: dict,
+    poi_rings: list[dict],
+    financials: dict,
+    scoring: dict,
+    research_bundle: dict | None = None,
+) -> list[dict]:
     content = {
         "task": "生成中国大陆店铺选址预测报告",
         "requirements": [
@@ -18,6 +24,7 @@ def build_report_prompt(payload: dict, poi_rings: list[dict], financials: dict, 
         "poi_rings": poi_rings,
         "financials": financials,
         "scoring": scoring,
+        "联网证据": research_bundle or {},
     }
     return [
         {"role": "system", "content": "你是谨慎、数据导向的商业选址顾问。"},
@@ -99,9 +106,10 @@ async def generate_report(
     poi_rings: list[dict],
     financials: dict,
     scoring: dict,
+    research_bundle: dict | None = None,
     llm_client=default_llm_client,
 ) -> dict:
-    messages = build_report_prompt(payload, poi_rings, financials, scoring)
+    messages = build_report_prompt(payload, poi_rings, financials, scoring, research_bundle)
     try:
         markdown = await llm_client(messages)
         return {"source": "llm", "markdown": markdown, "ai_error": None}

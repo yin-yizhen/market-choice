@@ -99,3 +99,22 @@ def test_score_assessment_flags_truncated_poi_results():
     result = score_assessment(rings, financials, {"business_type": "咖啡店", "average_ticket": 30})
 
     assert any("分页上限" in risk for risk in result["risk_factors"])
+
+
+def test_score_assessment_uses_research_evidence_for_planning_policy_and_heat():
+    financials = calculate_financials({"monthly_rent": 10000, "other_investment_total": 120000})
+    research_bundle = {
+        "categories": {
+            "街区发展计划": {"status": "supported", "confidence": 0.86, "summary": "有商业更新和慢行优化"},
+            "业态政策与证照": {"status": "supported", "confidence": 0.82, "summary": "餐饮需核验排烟和食品许可"},
+            "线上热度": {"status": "supported", "confidence": 0.78, "summary": "社交平台讨论和店铺评价活跃"},
+            "夜间/周末人气": {"status": "supported", "confidence": 0.75, "summary": "夜间商业和周末消费活跃"},
+        }
+    }
+
+    result = score_assessment(_rings(), financials, {"business_type": "咖啡店", "average_ticket": 32}, research_bundle)
+
+    assert result["scores"]["未来规划"] > 55
+    assert result["scores"]["证照可行性"] >= 65
+    assert result["scores"]["线上热度"] >= 60
+    assert "联网证据" in result["method_note"]

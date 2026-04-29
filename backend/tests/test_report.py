@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.report import generate_report
+from app.services.report import build_report_prompt, generate_report
 
 
 @pytest.mark.asyncio
@@ -23,3 +23,19 @@ async def test_generate_report_falls_back_when_llm_fails():
     assert result["ai_error"] == "network down"
     assert "关键结论" in result["markdown"]
     assert "竞品密度偏高" in result["markdown"]
+
+
+def test_build_report_prompt_includes_research_sources():
+    messages = build_report_prompt(
+        payload={"location": {"address": "上海市静安区南京西路"}, "business": {"business_type": "咖啡店"}},
+        poi_rings=[],
+        financials={},
+        scoring={},
+        research_bundle={
+            "sources": [{"title": "南京西路街区更新计划", "url": "https://example.gov.cn/plan"}],
+            "categories": {"街区发展计划": {"summary": "有商业更新", "confidence": 0.8}},
+        },
+    )
+
+    assert "https://example.gov.cn/plan" in messages[1]["content"]
+    assert "联网证据" in messages[1]["content"]

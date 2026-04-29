@@ -74,3 +74,18 @@ cd frontend
 npm test
 npm run build
 ```
+
+## 模型联网调研
+
+第一版不接 Tavily、Google Custom Search、Brave 或 SerpAPI，也不直接抓取搜索结果页。联网调研默认使用支持搜索 grounding 的模型能力：
+
+```bash
+RESEARCH_MODE=llm_grounding
+LLM_GROUNDING_PROVIDER=gemini
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_GROUNDING_MODEL=gemini-2.5-pro
+```
+
+提交选址分析时，后端会先获取高德 POI，再用 Gemini Grounding with Google Search 检索街区规划、人流交通、商圈结构、消费能力、竞品价格带、政策证照、线上热度、夜间/周末人气等公开资料。若模型没有返回可验证网页来源，接口会返回明确的“联网调研失败”错误，不会生成伪完整报告。证据不足的类别会在报告里标记为“证据不足/待线下核验”。
+
+参考：Gemini Grounding with Google Search：https://ai.google.dev/gemini-api/docs/google-search；OpenAI Web Search：https://platform.openai.com/docs/guides/tools-web-search?api-mode=responses。

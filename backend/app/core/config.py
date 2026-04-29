@@ -22,6 +22,10 @@ class Settings:
     llm_base_url: str = getenv("LLM_BASE_URL", "https://api.openai.com/v1")
     llm_model: str = getenv("LLM_MODEL", "gpt-4o-mini")
     frontend_origin: str = getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+    research_mode: str = getenv("RESEARCH_MODE", "llm_grounding")
+    llm_grounding_provider: str = getenv("LLM_GROUNDING_PROVIDER", "gemini")
+    gemini_api_key: str = getenv("GEMINI_API_KEY", "")
+    gemini_grounding_model: str = getenv("GEMINI_GROUNDING_MODEL", "gemini-2.5-pro")
 
 
 @lru_cache

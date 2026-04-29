@@ -6,6 +6,7 @@ from app.schemas import AnalyzeRequest, AnalyzeResponse, GeocodeCandidate
 from app.services.assumptions import infer_target_customer
 from app.services.amap import geocode, search_pois_around_detailed
 from app.services.finance import calculate_financials
+from app.services.grounded_research import GroundedResearchError, run_grounded_research
 from app.services.poi import summarize_ring
 from app.services.report import generate_report
 from app.services.scoring import score_assessment
@@ -61,8 +62,13 @@ async def analyze_location(payload: AnalyzeRequest) -> dict:
     if not request_dict["business"].get("target_customer"):
         request_dict["business"]["target_customer"] = infer_target_customer(rings, payload.business.business_type)
     financials = calculate_financials(request_dict["financial"], request_dict["business"], rings)
-    scoring = score_assessment(rings, financials, request_dict["business"])
-    report = await generate_report(request_dict, rings, financials, scoring)
+    try:
+        research_bundle = await run_grounded_research(request_dict, rings, financials)
+    except GroundedResearchError as exc:
+        raise HTTPException(status_code=503, detail=f"联网调研失败：{exc}") from exc
+
+    scoring = score_assessment(rings, financials, request_dict["business"], research_bundle)
+    report = await generate_report(request_dict, rings, financials, scoring, research_bundle=research_bundle)
     notes = [
         "POI 数据来自高德地图 Web 服务。",
         "人流、消费能力、规划、夜间/周末热度为规则估算与 AI 研判。",
@@ -78,6 +84,7 @@ async def analyze_location(payload: AnalyzeRequest) -> dict:
         "data_notes": notes,
         "poi_rings": rings,
         "financials": financials,
+        "research_bundle": research_bundle,
         "scoring": scoring,
         "report": report,
     }

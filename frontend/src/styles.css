@@ -363,7 +363,8 @@ button:hover {
 }
 
 .ring-summary,
-.score-list {
+.score-list,
+.research-list {
   display: grid;
   gap: 8px;
 }
@@ -382,6 +383,57 @@ button:hover {
   grid-template-columns: 92px 1fr 36px;
   align-items: center;
   gap: 8px;
+}
+
+.research-item {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #d9e1dd;
+  border-radius: 7px;
+  background: #fff;
+  line-height: 1.55;
+}
+
+.research-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.research-head span {
+  color: #1f6f4a;
+  font-weight: 800;
+}
+
+.research-item ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.research-item a {
+  color: #1c5d81;
+  overflow-wrap: anywhere;
+}
+
+.query-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.query-list span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #eef5f0;
+  color: #34413a;
+  font-size: 12px;
+}
+
+.muted {
+  color: #68756d;
 }
 
 meter {

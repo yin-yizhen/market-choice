@@ -66,7 +66,27 @@ def _hours_bonus(opening_hours: str, ring1000: dict) -> float:
     return 0
 
 
-def score_assessment(poi_rings: list[dict], financials: dict, business: dict) -> dict:
+def _evidence_confidence(research_bundle: dict | None, category: str) -> float:
+    if not research_bundle:
+        return 0.0
+    evidence = research_bundle.get("categories", {}).get(category, {})
+    if evidence.get("status") != "supported":
+        return 0.0
+    return float(evidence.get("confidence") or 0)
+
+
+def _evidence_score(base: int, confidence: float, supported_bonus: float = 20, missing_penalty: float = 8) -> int:
+    if confidence <= 0:
+        return _clamp(base - missing_penalty)
+    return _clamp(base + confidence * supported_bonus)
+
+
+def score_assessment(
+    poi_rings: list[dict],
+    financials: dict,
+    business: dict,
+    research_bundle: dict | None = None,
+) -> dict:
     ring500 = next((ring for ring in poi_rings if ring.get("radius") == 500), poi_rings[0] if poi_rings else {})
     ring1000 = next((ring for ring in poi_rings if ring.get("radius") == 1000), ring500)
     ring3000 = next((ring for ring in poi_rings if ring.get("radius") == 3000), ring1000)
@@ -94,27 +114,46 @@ def score_assessment(poi_rings: list[dict], financials: dict, business: dict) ->
     runway_penalty = max(2 - survival, 0) * 6
     daily_orders = business_metrics["break_even_daily_orders"]
 
+    planning_confidence = _evidence_confidence(research_bundle, "街区发展计划")
+    policy_confidence = _evidence_confidence(research_bundle, "业态政策与证照")
+    heat_confidence = _evidence_confidence(research_bundle, "线上热度")
+    night_confidence = _evidence_confidence(research_bundle, "夜间/周末人气")
+    consumption_confidence = _evidence_confidence(research_bundle, "消费能力与人口画像")
+
     scores = {
         "位置曝光": _clamp(45 + total500 * 0.45 + transport * 2),
         "目标人流": _clamp(40 + office_residential * 0.8 + transport * 2 + retail_leisure * 0.15 + target_bonus),
-        "消费能力": _clamp(48 + _category_total(ring1000, "office", "retail") * 0.65 + parking * 1.5 - max(daily_orders - 180, 0) * 0.08),
+        "消费能力": _clamp(
+            48
+            + _category_total(ring1000, "office", "retail") * 0.65
+            + parking * 1.5
+            + consumption_confidence * 12
+            - max(daily_orders - 180, 0) * 0.08
+        ),
         "竞品压力": _clamp(88 - competitors500 * 2.3 - competitors1000 * 0.35 + differentiation_bonus),
         "互补业态": _clamp(35 + complements500 * 1.3),
         "交通便利": _clamp(45 + transport * 5 + parking * 1.5),
         "停车条件": _clamp(38 + parking * 5),
-        "未来规划": 55,
+        "未来规划": _evidence_score(55, planning_confidence, supported_bonus=24, missing_penalty=10),
         "租金合理性": _clamp(95 - rent_ratio * 135 + survival * 2.5 - runway_penalty - max(daily_orders - 220, 0) * 0.06),
-        "证照可行性": 62 if any(word in business.get("business_type", "") for word in ("餐", "咖啡", "茶", "食")) else 72,
+        "证照可行性": _evidence_score(
+            62 if any(word in business.get("business_type", "") for word in ("餐", "咖啡", "茶", "食")) else 72,
+            policy_confidence,
+            supported_bonus=12,
+            missing_penalty=9,
+        ),
         "铺位硬件": 58,
-        "线上热度": _clamp(45 + total1000 * 0.12 + competitors1000 * 0.3),
-        "夜间人气": _clamp(42 + _category_total(ring1000, "food", "leisure") * 0.75 + transport * 1.2 + hours_bonus),
-        "周末人气": _clamp(42 + _category_total(ring3000, "retail", "leisure", "residential") * 0.22),
+        "线上热度": _clamp(45 + total1000 * 0.12 + competitors1000 * 0.3 + heat_confidence * 20),
+        "夜间人气": _clamp(42 + _category_total(ring1000, "food", "leisure") * 0.75 + transport * 1.2 + hours_bonus + night_confidence * 10),
+        "周末人气": _clamp(42 + _category_total(ring3000, "retail", "leisure", "residential") * 0.22 + night_confidence * 10),
         "风险因素": _clamp(88 - max(competitors500 - 10, 0) * 2 - max(rent_ratio - 0.18, 0) * 140 - max(daily_orders - 260, 0) * 0.05),
     }
 
     risk_factors: list[str] = []
     if any(ring.get("truncated") for ring in poi_rings):
         risk_factors.append("POI 查询达到分页上限，竞品和互补业态可能仍被低估。")
+    if research_bundle and any(item.get("status") != "supported" for item in research_bundle.get("categories", {}).values()):
+        risk_factors.append("部分联网调研类别证据不足，相关结论需线下复核。")
     if scores["竞品压力"] < 60:
         risk_factors.append("500 米和 1 公里圈层竞品密度偏高，需要明确差异化和价格带。")
     if scores["租金合理性"] < 65:
@@ -126,7 +165,7 @@ def score_assessment(poi_rings: list[dict], financials: dict, business: dict) ->
     if daily_orders >= 220:
         risk_factors.append(f"按当前客单价测算，保本需要约 {daily_orders} 单/日，需验证门店产能和时段客流。")
     if not risk_factors:
-        risk_factors.append("第一版未接入规划、房价和外卖价格数据，需线下复核关键假设。")
+        risk_factors.append("第一版未接入专用房价、外卖价格和规划数据库，需线下复核关键假设。")
 
     weights = {
         "目标人流": 1.2,
@@ -142,11 +181,12 @@ def score_assessment(poi_rings: list[dict], financials: dict, business: dict) ->
         weighted_total += score * weight
         weight_sum += weight
 
+    note = "POI 为真实地图数据；人流、消费能力、规划、夜间/周末热度结合规则估算、联网证据和 AI 研判。"
     return {
         "overall_score": _clamp(weighted_total / weight_sum),
         "scores": scores,
         "risk_factors": risk_factors,
         "business_metrics": business_metrics,
         "verification_required": ["未来规划", "证照可行性", "铺位硬件", "线上热度", "夜间人气", "周末人气"],
-        "method_note": "POI 为真实地图数据；人流、消费能力、规划、夜间/周末热度为规则估算和 AI 研判。",
+        "method_note": note,
     }
