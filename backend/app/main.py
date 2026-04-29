@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.schemas import AnalyzeRequest, AnalyzeResponse, GeocodeCandidate
-from app.services.assumptions import infer_target_customer
 from app.services.amap import geocode, search_pois_around_detailed
+from app.services.assumptions import infer_target_customer
 from app.services.finance import calculate_financials
 from app.services.grounded_research import GroundedResearchError, run_grounded_research
 from app.services.poi import summarize_ring
@@ -61,6 +61,7 @@ async def analyze_location(payload: AnalyzeRequest) -> dict:
 
     if not request_dict["business"].get("target_customer"):
         request_dict["business"]["target_customer"] = infer_target_customer(rings, payload.business.business_type)
+
     financials = calculate_financials(request_dict["financial"], request_dict["business"], rings)
     try:
         research_bundle = await run_grounded_research(request_dict, rings, financials)
@@ -71,13 +72,13 @@ async def analyze_location(payload: AnalyzeRequest) -> dict:
     report = await generate_report(request_dict, rings, financials, scoring, research_bundle=research_bundle)
     notes = [
         "POI 数据来自高德地图 Web 服务。",
-        "人流、消费能力、规划、夜间/周末热度为规则估算与 AI 研判。",
-        "房价、城市更新、外卖价格和政策细则尚未接入真实数据源。",
+        "人流、消费能力、规划、夜间/周末热度为规则估算、联网证据与 AI 研判。",
+        "房价、城市更新、外卖价格和政策细则仍需结合公开来源与线下核验。",
     ]
     if any(ring.get("truncated") for ring in rings):
         notes.append("部分圈层 POI 达到分页上限，系统已标记 truncated=true，竞品和需求判断需谨慎。")
     if financials.get("assumption_notes"):
-        notes.append("除月租金和其余投资外，未填写的财务项已由系统按点位 POI、业态、面积和员工数估算。")
+        notes.append("除月租金和其余投资外，未填写的财务项已由系统按点位、POI、业态、面积和员工数估算。")
     notes.append(f"目标客户由系统推断：{request_dict['business']['target_customer']}")
     notes.extend(errors)
     return {

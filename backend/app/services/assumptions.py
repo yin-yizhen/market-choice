@@ -26,7 +26,7 @@ def infer_target_customer(poi_rings: list[dict], business_type: str) -> str:
     if not segments:
         segments.append("周边自然客流")
 
-    suffix = "，需结合线上评价和线下蹲点复核"
-    if any(word in business_type for word in ("咖啡", "茶", "餐", "饮")):
+    suffix = "，需结合线上评价和线下踩点复核"
+    if any(word in business_type for word in ("咖啡", "茶", "餐", "饮", "食")):
         suffix = "，重点验证早晚高峰、午间和周末复购"
     return "、".join(segments) + suffix

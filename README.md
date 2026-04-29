@@ -1,24 +1,25 @@
 # 店铺选址评估网页
 
-这是一个中国大陆店铺选址评估第一版原型。用户搜索并选择点位，填写开店信息和财务成本，后端拉取高德 POI，计算财务与调研评分，并用大模型生成中文选址报告。
+这是一个中国大陆店铺选址评估原型。用户搜索并选择点位，填写开店信息和少量财务假设，后端拉取高德 POI，结合财务测算、联网调研证据和规则评分生成中文选址报告。
 
 ## 功能
 
 - 地图工作台：搜索位置、选择候选点、显示 500m / 1km / 3km 圈层。
 - 开店信息：目标业务、客单价、面积、员工、营业时段、差异化；目标客户由系统根据地址、POI、业态和商圈画像推断。
-- 财务测算：用户只填写月租金和其余投资总计；物业、人工、水电、原材料、平台抽佣、营销、证照、预计月营收和毛利率由系统估算。
+- 财务测算：用户只填写月租金和其余投资总计；其他成本、预计营收和毛利率由系统根据点位、业态、POI 和面积估算。
 - POI 分析：按三圈层分页统计竞品、互补业态和主要类别，并标记是否被截断。
-- 报告输出：综合得分、15 项评分、保本营业额、保本日单量、坪效、人效、最坏支撑月数、风险因素和预测报告。
+- 联网调研：默认支持阿里云百炼千问联网检索 Agent，也保留 Gemini Grounding 作为备用。
+- 报告输出：综合得分、15 项评分、保本营业额、保本日单量、坪效、人效、最坏支撑月数、风险因素、联网证据和预测报告。
 
 ## 数据边界
 
-第一版真实接入高德地理编码和周边 POI。POI 会分页抓取，并在达到分页上限时标记 `truncated=true`。人流、消费能力、未来规划、夜间人气、周末人气、线上热度等为规则估算和 AI 研判。房价、城市更新、外卖价格、政策细则尚未接入真实数据源。
+第一版真实接入高德地理编码和周边 POI。人流、消费能力、未来规划、夜间人气、周末人气、线上热度等由联网公开资料、规则估算和 AI 研判共同形成。
 
-财务测算中，其余投资总计按 70% 开办成本、30% 备用资金拆分；一次性开办成本和可用备用金分开展示。“最坏情况可支撑月数”只用可用备用金除以月固定现金支出，不把装修、设备、转让费、押金视为可续命现金。未填写的营收、毛利和细项成本会在报告数据说明中标注为系统估算。
+财务测算中，其余投资总计按 70% 开办成本、30% 备用资金拆分；一次性开办成本和可用备用金分开展示。“最坏情况下可支撑月数”只用可用备用金除以月固定现金支出，不把装修、设备、转让费、押金视为可续命现金。
 
 ## 环境变量
 
-复制 `.env.example` 到项目根目录 `.env`，并按需配置：
+后端读取项目根目录 `.env` 或 `backend/.env`。
 
 ```bash
 AMAP_WEB_SERVICE_KEY=your-amap-web-service-key
@@ -26,17 +27,28 @@ LLM_API_KEY=your-openai-compatible-api-key
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
 FRONTEND_ORIGIN=http://localhost:5173
+
+RESEARCH_MODE=llm_grounding
+LLM_GROUNDING_PROVIDER=dashscope
+DASHSCOPE_API_KEY=your-dashscope-api-key
+DASHSCOPE_WEB_SEARCH_AGENT_ID=aid-f598fea13bc64a75824ed53dee45d958
+DASHSCOPE_WEB_SEARCH_AGENT_VERSION=beta
 ```
 
-`AMAP_WEB_SERVICE_KEY` 给后端查询地理编码和 POI 使用。`LLM_*` 给后端生成 AI 报告使用。
+如果要切回 Gemini：
 
-前端还需要在 `frontend/.env` 中配置浏览器地图 key：
+```bash
+LLM_GROUNDING_PROVIDER=gemini
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_GROUNDING_MODEL=gemini-2.5-pro
+```
+
+前端地图 key 放在 `frontend/.env`：
 
 ```bash
 VITE_AMAP_JS_API_KEY=your-amap-js-api-key
+VITE_AMAP_SECURITY_JS_CODE=your-amap-security-js-code
 ```
-
-不配置 `frontend/.env` 时，前端会显示可演示的圈层地图，但不会加载真实高德 JS 地图。
 
 ## 本地启动
 
@@ -75,17 +87,10 @@ npm test
 npm run build
 ```
 
-## 模型联网调研
+## 联网调研说明
 
-第一版不接 Tavily、Google Custom Search、Brave 或 SerpAPI，也不直接抓取搜索结果页。联网调研默认使用支持搜索 grounding 的模型能力：
+第一版不接 Tavily、Google Custom Search、Brave 或 SerpAPI，也不直接抓取搜索结果页。默认使用阿里云百炼千问联网检索 Agent：
 
-```bash
-RESEARCH_MODE=llm_grounding
-LLM_GROUNDING_PROVIDER=gemini
-GEMINI_API_KEY=your-gemini-api-key
-GEMINI_GROUNDING_MODEL=gemini-2.5-pro
-```
+`https://dashscope.aliyuncs.com/api/v2/apps/web-search-agent/chat/completions`
 
-提交选址分析时，后端会先获取高德 POI，再用 Gemini Grounding with Google Search 检索街区规划、人流交通、商圈结构、消费能力、竞品价格带、政策证照、线上热度、夜间/周末人气等公开资料。若模型没有返回可验证网页来源，接口会返回明确的“联网调研失败”错误，不会生成伪完整报告。证据不足的类别会在报告里标记为“证据不足/待线下核验”。
-
-参考：Gemini Grounding with Google Search：https://ai.google.dev/gemini-api/docs/google-search；OpenAI Web Search：https://platform.openai.com/docs/guides/tools-web-search?api-mode=responses。
+提交选址分析时，后端会先获取高德 POI，再调用联网检索 Agent 获取街区规划、人流交通、商圈结构、消费能力、竞品价格带、政策证照、线上热度、夜间/周末人气等公开资料。若模型没有返回可验证网页来源，接口会返回明确的“联网调研失败”错误，不会生成伪完整报告。证据不足的类别会在报告里标记为“证据不足/待线下核验”。

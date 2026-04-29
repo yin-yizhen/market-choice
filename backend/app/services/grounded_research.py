@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib import request
 
 from app.core.config import get_settings
@@ -28,6 +29,8 @@ CATEGORY_KEYWORDS = {
     "夜间/周末人气": ("夜间", "夜经济", "周末", "文旅", "休闲", "夜市"),
 }
 
+URL_RE = re.compile(r"https?://[^\s\]）)>\"']+")
+
 
 class GroundedResearchError(RuntimeError):
     pass
@@ -48,6 +51,7 @@ def build_grounded_research_prompt(payload: dict, poi_rings: list[dict], financi
             "每个判断都尽量基于公开网页来源。",
             "如果没有证据，明确写证据不足，不要编造。",
             "重点回答需求、人流、竞争、价格带、租金承压、政策证照、未来1-3年街区趋势。",
+            "尽量在回答末尾列出参考来源标题和URL。",
         ],
     }
     return json.dumps(content, ensure_ascii=False)
@@ -58,7 +62,7 @@ def _candidate_text(candidate: dict) -> str:
     return "\n".join(str(part.get("text", "")) for part in parts if isinstance(part, dict)).strip()
 
 
-def _extract_sources(metadata: dict) -> list[dict]:
+def _extract_gemini_sources(metadata: dict) -> list[dict]:
     sources = []
     seen: set[str] = set()
     for index, chunk in enumerate(metadata.get("groundingChunks", []) or []):
@@ -90,17 +94,18 @@ def _support_text_by_source(metadata: dict, source_index: int) -> str:
     return "；".join(texts)
 
 
-def _build_categories(answer: str, sources: list[dict], metadata: dict) -> dict:
+def _build_categories(answer: str, sources: list[dict], metadata: dict | None = None) -> dict:
     categories = {}
     lower_answer = answer.lower()
+    metadata = metadata or {}
     for name in RESEARCH_CATEGORIES:
         keywords = CATEGORY_KEYWORDS[name]
         matched_sources = []
         for source in sources:
-            support = _support_text_by_source(metadata, source["index"])
-            haystack = f"{source['title']} {support}".lower()
+            support = _support_text_by_source(metadata, source.get("index", -1))
+            haystack = f"{source.get('title', '')} {source.get('snippet', '')} {support}".lower()
             if any(keyword.lower() in haystack for keyword in keywords):
-                matched_sources.append({key: source[key] for key in ("id", "title", "url")})
+                matched_sources.append({key: source[key] for key in ("id", "title", "url") if key in source})
         supported = bool(matched_sources) or any(keyword.lower() in lower_answer for keyword in keywords)
         summary = _extract_category_summary(answer, name) if supported else "未找到足够公开资料，需线下核验。"
         confidence = min(0.92, 0.45 + len(matched_sources) * 0.18) if supported else 0.25
@@ -129,7 +134,7 @@ def parse_gemini_grounding_response(response: dict) -> dict:
     metadata = candidate.get("groundingMetadata") or {}
     answer = _candidate_text(candidate)
     queries = metadata.get("webSearchQueries") or []
-    sources = _extract_sources(metadata)
+    sources = _extract_gemini_sources(metadata)
     if not sources:
         raise GroundedResearchError("Gemini grounding 没有返回可验证网页来源")
 
@@ -139,7 +144,114 @@ def parse_gemini_grounding_response(response: dict) -> dict:
         "provider": "gemini",
         "answer": answer,
         "queries": queries,
-        "sources": [{key: source[key] for key in ("id", "title", "url", "score")} for source in sources],
+        "sources": [{key: source.get(key) for key in ("id", "title", "url", "score")} for source in sources],
+        "source_count": len(sources),
+        "categories": categories,
+    }
+
+
+def _iter_values(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _iter_values(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _iter_values(child)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            try:
+                yield from _iter_values(json.loads(stripped))
+                return
+            except json.JSONDecodeError:
+                pass
+        yield value
+
+
+def _extract_dashscope_sources(events: list[dict]) -> list[dict]:
+    sources = []
+    seen: set[str] = set()
+    for value in _iter_values(events):
+        if isinstance(value, dict):
+            url = value.get("url") or value.get("link") or value.get("href")
+            if isinstance(url, str) and url.startswith(("http://", "https://")) and url not in seen:
+                seen.add(url)
+                sources.append(
+                    {
+                        "id": f"S{len(sources) + 1}",
+                        "title": value.get("title") or value.get("name") or url,
+                        "url": url,
+                        "snippet": value.get("snippet") or value.get("summary") or value.get("content") or "",
+                    }
+                )
+        elif isinstance(value, str):
+            for url in URL_RE.findall(value):
+                if url not in seen:
+                    seen.add(url)
+                    sources.append({"id": f"S{len(sources) + 1}", "title": url, "url": url, "snippet": ""})
+    return sources
+
+
+def _extract_dashscope_queries(events: list[dict]) -> list[str]:
+    queries = []
+    seen: set[str] = set()
+    for value in _iter_values(events):
+        if not isinstance(value, dict):
+            continue
+        for key in ("query", "search_query", "keyword", "keywords"):
+            item = value.get(key)
+            if isinstance(item, str) and item and item not in seen:
+                seen.add(item)
+                queries.append(item)
+            elif isinstance(item, list):
+                for text in item:
+                    if isinstance(text, str) and text and text not in seen:
+                        seen.add(text)
+                        queries.append(text)
+    return queries
+
+
+def _append_stream_text(current: str, piece: str) -> str:
+    if not piece:
+        return current
+    if piece == current or current.endswith(piece):
+        return current
+    if piece.startswith(current):
+        return piece
+    return current + piece
+
+
+def _message_content_as_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if content is None:
+        return ""
+    return json.dumps(content, ensure_ascii=False)
+
+
+def parse_dashscope_agent_events(events: list[dict]) -> dict:
+    answer = ""
+    tool_texts = []
+    for event in events:
+        msg = event.get("output", {}).get("choices", [{}])[0].get("message", {})
+        content = _message_content_as_text(msg.get("content") or msg.get("reasoning_content"))
+        if msg.get("role") == "tool":
+            tool_texts.append(content)
+        else:
+            answer = _append_stream_text(answer, content)
+
+    sources = _extract_dashscope_sources(events)
+    if not sources:
+        raise GroundedResearchError("DashScope 联网检索 Agent 没有返回可验证网页来源")
+    full_answer = answer.strip() or "\n".join(tool_texts).strip()
+    categories = _build_categories(full_answer, sources)
+    return {
+        "required": True,
+        "provider": "dashscope",
+        "answer": full_answer,
+        "queries": _extract_dashscope_queries(events),
+        "sources": [{key: source.get(key) for key in ("id", "title", "url")} for source in sources],
         "source_count": len(sources),
         "categories": categories,
     }
@@ -147,10 +259,6 @@ def parse_gemini_grounding_response(response: dict) -> dict:
 
 async def default_gemini_client(prompt: str) -> dict:
     settings = get_settings()
-    if settings.research_mode != "llm_grounding":
-        raise GroundedResearchError(f"Unsupported RESEARCH_MODE: {settings.research_mode}")
-    if settings.llm_grounding_provider != "gemini":
-        raise GroundedResearchError(f"Unsupported LLM_GROUNDING_PROVIDER: {settings.llm_grounding_provider}")
     if not settings.gemini_api_key:
         raise GroundedResearchError("GEMINI_API_KEY is not configured")
 
@@ -171,12 +279,70 @@ async def default_gemini_client(prompt: str) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+async def default_dashscope_client(prompt: str) -> list[dict]:
+    settings = get_settings()
+    if not settings.dashscope_api_key:
+        raise GroundedResearchError("DASHSCOPE_API_KEY is not configured")
+    if not settings.dashscope_web_search_agent_id:
+        raise GroundedResearchError("DASHSCOPE_WEB_SEARCH_AGENT_ID is not configured")
+
+    body = json.dumps(
+        {
+            "input": {"messages": [{"role": "user", "content": prompt}]},
+            "parameters": {
+                "agent_options": {
+                    "agent_id": settings.dashscope_web_search_agent_id,
+                    "agent_version": settings.dashscope_web_search_agent_version,
+                }
+            },
+            "stream": True,
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    req = request.Request(
+        settings.dashscope_web_search_api_url,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {settings.dashscope_api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    events = []
+    with request.urlopen(req, timeout=90) as response:
+        for raw_line in response:
+            line = raw_line.decode("utf-8").strip()
+            if not line or not line.startswith("data:"):
+                continue
+            payload = line[len("data:") :].strip()
+            if payload == "[DONE]":
+                break
+            event = json.loads(payload)
+            if event.get("code") and event.get("code") != "200":
+                raise GroundedResearchError(f"DashScope 联网检索 Agent 服务异常：{event}")
+            events.append(event)
+    return events
+
+
 async def run_grounded_research(
     payload: dict,
     poi_rings: list[dict],
     financials: dict,
     gemini_client=default_gemini_client,
+    dashscope_client=default_dashscope_client,
+    provider: str | None = None,
 ) -> dict:
+    settings = get_settings()
+    if settings.research_mode != "llm_grounding":
+        raise GroundedResearchError(f"Unsupported RESEARCH_MODE: {settings.research_mode}")
+
+    selected_provider = (provider or settings.llm_grounding_provider).lower()
     prompt = build_grounded_research_prompt(payload, poi_rings, financials)
-    response = await gemini_client(prompt)
-    return parse_gemini_grounding_response(response)
+    if selected_provider == "gemini":
+        response = await gemini_client(prompt)
+        return parse_gemini_grounding_response(response)
+    if selected_provider == "dashscope":
+        events = await dashscope_client(prompt)
+        return parse_dashscope_agent_events(events)
+    raise GroundedResearchError(f"Unsupported LLM_GROUNDING_PROVIDER: {selected_provider}")

@@ -59,7 +59,7 @@ def _target_customer_bonus(target_customer: str, ring1000: dict) -> float:
 def _hours_bonus(opening_hours: str, ring1000: dict) -> float:
     hours = opening_hours.lower()
     food_leisure = _category_total(ring1000, "food", "leisure")
-    if any(token in hours for token in ("22", "23", "24", "夜", "晚")):
+    if any(token in hours for token in ("22", "23", "24", "晚", "夜")):
         return min(food_leisure * 0.6, 12)
     if any(token in hours for token in ("08", "7", "早")):
         return min(_category_total(ring1000, "office", "transport") * 0.5, 8)
@@ -161,7 +161,7 @@ def score_assessment(
     if scores["停车条件"] < 55:
         risk_factors.append("停车条件不足，可能影响目的型消费和周末客流。")
     if scores["目标人流"] < 60:
-        risk_factors.append("目标客群 POI 支撑不足，需要线下蹲点验证真实人流。")
+        risk_factors.append("目标客群 POI 支撑不足，需要线下踩点验证真实人流。")
     if daily_orders >= 220:
         risk_factors.append(f"按当前客单价测算，保本需要约 {daily_orders} 单/日，需验证门店产能和时段客流。")
     if not risk_factors:

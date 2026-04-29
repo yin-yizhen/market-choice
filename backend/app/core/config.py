@@ -26,6 +26,13 @@ class Settings:
     llm_grounding_provider: str = getenv("LLM_GROUNDING_PROVIDER", "gemini")
     gemini_api_key: str = getenv("GEMINI_API_KEY", "")
     gemini_grounding_model: str = getenv("GEMINI_GROUNDING_MODEL", "gemini-2.5-pro")
+    dashscope_api_key: str = getenv("DASHSCOPE_API_KEY", "")
+    dashscope_web_search_agent_id: str = getenv("DASHSCOPE_WEB_SEARCH_AGENT_ID", "")
+    dashscope_web_search_agent_version: str = getenv("DASHSCOPE_WEB_SEARCH_AGENT_VERSION", "beta")
+    dashscope_web_search_api_url: str = getenv(
+        "DASHSCOPE_WEB_SEARCH_API_URL",
+        "https://dashscope.aliyuncs.com/api/v2/apps/web-search-agent/chat/completions",
+    )
 
 
 @lru_cache

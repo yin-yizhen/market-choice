@@ -16,6 +16,10 @@ async def test_generate_report_falls_back_when_llm_fails():
         poi_rings=[{"radius": 500, "total": 42, "categories": {}, "competitor_count": 8}],
         financials={"break_even_revenue": 100000, "survival_months_worst_case": 4.5},
         scoring={"overall_score": 68, "scores": {"目标人流": 72}, "risk_factors": ["竞品密度偏高"]},
+        research_bundle={
+            "sources": [{"title": "南京西路街区更新计划", "url": "https://example.gov.cn/plan"}],
+            "categories": {"街区发展计划": {"summary": "有商业更新", "confidence": 0.8}},
+        },
         llm_client=failing_client,
     )
 
@@ -23,6 +27,7 @@ async def test_generate_report_falls_back_when_llm_fails():
     assert result["ai_error"] == "network down"
     assert "关键结论" in result["markdown"]
     assert "竞品密度偏高" in result["markdown"]
+    assert "https://example.gov.cn/plan" in result["markdown"]
 
 
 def test_build_report_prompt_includes_research_sources():
