@@ -21,6 +21,7 @@ class BusinessInput(BaseModel):
 
 class FinancialInput(BaseModel):
     monthly_rent: float = Field(default=0, ge=0)
+    other_investment_total: float = Field(default=0, ge=0)
     property_fee: float = Field(default=0, ge=0)
     transfer_fee: float = Field(default=0, ge=0)
     deposit: float = Field(default=0, ge=0)

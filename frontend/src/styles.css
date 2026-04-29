@@ -300,6 +300,12 @@ button:hover {
   grid-column: 1 / -1;
 }
 
+.field-note {
+  color: #647168;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .primary-action {
   width: 100%;
   min-height: 48px;

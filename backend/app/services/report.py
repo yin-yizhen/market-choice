@@ -80,6 +80,7 @@ def _fallback_markdown(payload: dict, poi_rings: list[dict], financials: dict, s
             f"- 一次性开办成本约 {financials.get('one_time_opening_cost', 0)} 元",
             f"- 可用备用资金约 {financials.get('available_cash_reserve', 0)} 元",
             f"- 现金压力等级：{financials.get('cash_pressure_level', 'unknown')}",
+            *(f"- {note}" for note in financials.get("assumption_notes", [])),
             "",
             "## 调研评分",
             *score_lines,

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.schemas import AnalyzeRequest, AnalyzeResponse, GeocodeCandidate
+from app.services.assumptions import infer_target_customer
 from app.services.amap import geocode, search_pois_around_detailed
 from app.services.finance import calculate_financials
 from app.services.poi import summarize_ring
@@ -57,7 +58,9 @@ async def analyze_location(payload: AnalyzeRequest) -> dict:
         )
         rings.append(ring_summary)
 
-    financials = calculate_financials(request_dict["financial"])
+    if not request_dict["business"].get("target_customer"):
+        request_dict["business"]["target_customer"] = infer_target_customer(rings, payload.business.business_type)
+    financials = calculate_financials(request_dict["financial"], request_dict["business"], rings)
     scoring = score_assessment(rings, financials, request_dict["business"])
     report = await generate_report(request_dict, rings, financials, scoring)
     notes = [
@@ -67,6 +70,9 @@ async def analyze_location(payload: AnalyzeRequest) -> dict:
     ]
     if any(ring.get("truncated") for ring in rings):
         notes.append("部分圈层 POI 达到分页上限，系统已标记 truncated=true，竞品和需求判断需谨慎。")
+    if financials.get("assumption_notes"):
+        notes.append("除月租金和其余投资外，未填写的财务项已由系统按点位 POI、业态、面积和员工数估算。")
+    notes.append(f"目标客户由系统推断：{request_dict['business']['target_customer']}")
     notes.extend(errors)
     return {
         "data_notes": notes,

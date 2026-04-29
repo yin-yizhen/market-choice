@@ -10,27 +10,13 @@ const defaultBusiness: BusinessInput = {
   average_ticket: 32,
   store_area: 80,
   employee_count: 4,
-  target_customer: '周边白领、社区居民、周末逛街人群',
   opening_hours: '08:00-22:00',
   differentiation: '精品咖啡、轻食、外带效率高',
 };
 
 const defaultFinancial: FinancialInput = {
   monthly_rent: 28000,
-  property_fee: 1800,
-  transfer_fee: 80000,
-  deposit: 56000,
-  renovation_cost: 160000,
-  equipment_cost: 90000,
-  labor_cost: 42000,
-  utilities_cost: 6000,
-  raw_material_cost: 52000,
-  platform_commission: 8000,
-  marketing_cost: 10000,
-  license_cost: 8000,
-  working_capital: 90000,
-  expected_monthly_revenue: 180000,
-  gross_margin: 0.58,
+  other_investment_total: 200000,
 };
 
 const demoLocation: LocationCandidate = {
@@ -251,8 +237,8 @@ function BusinessForm({ business, onChange }: { business: BusinessInput; onChang
         <NumberField label="店铺面积" value={business.store_area} onChange={(value) => onChange({ ...business, store_area: value })} />
         <NumberField label="员工数" value={business.employee_count} onChange={(value) => onChange({ ...business, employee_count: value })} />
         <TextField label="营业时段" value={business.opening_hours} onChange={(value) => onChange({ ...business, opening_hours: value })} />
-        <TextField label="目标客户" value={business.target_customer} onChange={(value) => onChange({ ...business, target_customer: value })} />
       </div>
+      <p className="field-note">目标客户将由系统根据地址、POI、业态和商圈画像自动推断。</p>
       <label className="wide-field">
         差异化
         <textarea value={business.differentiation} onChange={(event) => onChange({ ...business, differentiation: event.target.value })} />
@@ -262,26 +248,17 @@ function BusinessForm({ business, onChange }: { business: BusinessInput; onChang
 }
 
 function FinancialForm({ financial, onChange }: { financial: FinancialInput; onChange: (value: FinancialInput) => void }) {
-  const set = (key: keyof FinancialInput, value: number) => onChange({ ...financial, [key]: value });
   return (
     <section className="form-section">
       <h2><WalletCards size={18} /> 财务测算</h2>
+      <p className="field-note">只需填写月租金和其余投资总计；其他成本、预计营收和毛利率由系统根据点位、业态、POI 和面积估算。</p>
       <div className="form-grid">
-        <NumberField label="月租金" value={financial.monthly_rent} onChange={(value) => set('monthly_rent', value)} />
-        <NumberField label="物业费" value={financial.property_fee} onChange={(value) => set('property_fee', value)} />
-        <NumberField label="转让费" value={financial.transfer_fee} onChange={(value) => set('transfer_fee', value)} />
-        <NumberField label="押金" value={financial.deposit} onChange={(value) => set('deposit', value)} />
-        <NumberField label="装修成本" value={financial.renovation_cost} onChange={(value) => set('renovation_cost', value)} />
-        <NumberField label="设备成本" value={financial.equipment_cost} onChange={(value) => set('equipment_cost', value)} />
-        <NumberField label="人工成本" value={financial.labor_cost} onChange={(value) => set('labor_cost', value)} />
-        <NumberField label="水电燃气" value={financial.utilities_cost} onChange={(value) => set('utilities_cost', value)} />
-        <NumberField label="原材料成本" value={financial.raw_material_cost} onChange={(value) => set('raw_material_cost', value)} />
-        <NumberField label="平台抽佣" value={financial.platform_commission} onChange={(value) => set('platform_commission', value)} />
-        <NumberField label="营销费用" value={financial.marketing_cost} onChange={(value) => set('marketing_cost', value)} />
-        <NumberField label="证照费用" value={financial.license_cost} onChange={(value) => set('license_cost', value)} />
-        <NumberField label="备用资金" value={financial.working_capital} onChange={(value) => set('working_capital', value)} />
-        <NumberField label="预计月营收" value={financial.expected_monthly_revenue} onChange={(value) => set('expected_monthly_revenue', value)} />
-        <NumberField label="毛利率" value={financial.gross_margin} step={0.01} onChange={(value) => set('gross_margin', value)} />
+        <NumberField label="月租金" value={financial.monthly_rent} onChange={(value) => onChange({ ...financial, monthly_rent: value })} />
+        <NumberField
+          label="其余投资总计"
+          value={financial.other_investment_total}
+          onChange={(value) => onChange({ ...financial, other_investment_total: value })}
+        />
       </div>
     </section>
   );

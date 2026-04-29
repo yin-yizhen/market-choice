@@ -12,27 +12,13 @@ export type BusinessInput = {
   average_ticket: number;
   store_area: number;
   employee_count: number;
-  target_customer: string;
   opening_hours: string;
   differentiation: string;
 };
 
 export type FinancialInput = {
   monthly_rent: number;
-  property_fee: number;
-  transfer_fee: number;
-  deposit: number;
-  renovation_cost: number;
-  equipment_cost: number;
-  labor_cost: number;
-  utilities_cost: number;
-  raw_material_cost: number;
-  platform_commission: number;
-  marketing_cost: number;
-  license_cost: number;
-  working_capital: number;
-  expected_monthly_revenue: number;
-  gross_margin: number;
+  other_investment_total: number;
 };
 
 export type AnalysisResponse = {
