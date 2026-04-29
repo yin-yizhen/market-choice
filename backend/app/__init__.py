@@ -1,0 +1,1 @@
+"""Store location assessment backend."""
