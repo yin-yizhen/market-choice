@@ -62,6 +62,8 @@ def _fallback_markdown(payload: dict, poi_rings: list[dict], financials: dict, s
     ]
     risk_lines = [f"- {risk}" for risk in risks]
     score_lines = [f"- {name}: {score} 分" for name, score in scores.items()]
+    metrics = scoring.get("business_metrics", {})
+    verification = scoring.get("verification_required", [])
     return "\n".join(
         [
             "## 关键结论",
@@ -73,7 +75,10 @@ def _fallback_markdown(payload: dict, poi_rings: list[dict], financials: dict, s
             "",
             "## 财务承压",
             f"- 保本月营业额约 {financials.get('break_even_revenue', 0)} 元",
+            f"- 保本日单量约 {metrics.get('break_even_daily_orders', 0)} 单",
             f"- 最坏情况资金可支撑 {financials.get('survival_months_worst_case', 0)} 个月",
+            f"- 一次性开办成本约 {financials.get('one_time_opening_cost', 0)} 元",
+            f"- 可用备用资金约 {financials.get('available_cash_reserve', 0)} 元",
             f"- 现金压力等级：{financials.get('cash_pressure_level', 'unknown')}",
             "",
             "## 调研评分",
@@ -81,6 +86,9 @@ def _fallback_markdown(payload: dict, poi_rings: list[dict], financials: dict, s
             "",
             "## 风险与建议",
             *(risk_lines or ["- 暂未发现高风险，但需要实地蹲点验证客流。"]),
+            "",
+            "## 待线下核验",
+            *(f"- {item}" for item in verification),
         ]
     )
 

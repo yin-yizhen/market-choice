@@ -7,6 +7,8 @@ from app.core.config import get_settings
 
 
 AMAP_BASE = "https://restapi.amap.com/v3"
+PAGE_SIZE = 25
+MAX_PAGES = 20
 
 
 def _get_json(path: str, params: dict) -> dict:
@@ -16,7 +18,11 @@ def _get_json(path: str, params: dict) -> dict:
     query = parse.urlencode({**params, "key": settings.amap_web_service_key})
     url = f"{AMAP_BASE}/{path}?{query}"
     with request.urlopen(url, timeout=20) as response:
-        return json.loads(response.read().decode("utf-8"))
+        data = json.loads(response.read().decode("utf-8"))
+    if data.get("status") != "1":
+        info = data.get("info") or data.get("infocode") or "unknown error"
+        raise RuntimeError(f"AMap API error: {info}")
+    return data
 
 
 def geocode(keyword: str, city: str = "") -> list[dict]:
@@ -40,15 +46,35 @@ def geocode(keyword: str, city: str = "") -> list[dict]:
     return candidates
 
 
+def search_pois_around_detailed(latitude: float, longitude: float, radius: int) -> dict:
+    pois: list[dict] = []
+    declared_count = 0
+    pages_fetched = 0
+    for page in range(1, MAX_PAGES + 1):
+        data = _get_json(
+            "place/around",
+            {
+                "location": f"{longitude},{latitude}",
+                "radius": radius,
+                "offset": PAGE_SIZE,
+                "page": page,
+                "extensions": "base",
+            },
+        )
+        declared_count = max(declared_count, int(data.get("count") or 0))
+        page_pois = data.get("pois", [])
+        pois.extend(page_pois)
+        pages_fetched = page
+        if len(page_pois) < PAGE_SIZE or len(pois) >= declared_count:
+            break
+
+    return {
+        "pois": pois,
+        "declared_count": declared_count,
+        "pages_fetched": pages_fetched,
+        "truncated": declared_count > len(pois),
+    }
+
+
 def search_pois_around(latitude: float, longitude: float, radius: int) -> list[dict]:
-    data = _get_json(
-        "place/around",
-        {
-            "location": f"{longitude},{latitude}",
-            "radius": radius,
-            "offset": 50,
-            "page": 1,
-            "extensions": "base",
-        },
-    )
-    return data.get("pois", [])
+    return search_pois_around_detailed(latitude, longitude, radius)["pois"]

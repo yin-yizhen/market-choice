@@ -43,12 +43,17 @@ export type AnalysisResponse = {
     categories: Record<string, number>;
     competitor_count: number;
     complementary_count: number;
+    declared_count?: number;
+    pages_fetched?: number;
+    truncated?: boolean;
   }>;
   financials: Record<string, number | string | null>;
   scoring: {
     overall_score: number;
     scores: Record<string, number>;
     risk_factors: string[];
+    business_metrics?: Record<string, number | string | null>;
+    verification_required?: string[];
     method_note?: string;
   };
   report: {

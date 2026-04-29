@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.schemas import AnalyzeRequest, AnalyzeResponse, GeocodeCandidate
-from app.services.amap import geocode, search_pois_around
+from app.services.amap import geocode, search_pois_around_detailed
 from app.services.finance import calculate_financials
 from app.services.poi import summarize_ring
 from app.services.report import generate_report
@@ -41,11 +41,21 @@ async def analyze_location(payload: AnalyzeRequest) -> dict:
     errors = []
     for radius in (500, 1000, 3000):
         try:
-            pois = search_pois_around(payload.location.latitude, payload.location.longitude, radius)
+            poi_result = search_pois_around_detailed(payload.location.latitude, payload.location.longitude, radius)
+            pois = poi_result["pois"]
         except Exception as exc:
             pois = []
+            poi_result = {"declared_count": 0, "pages_fetched": 0, "truncated": False}
             errors.append(f"{radius} 米 POI 查询失败：{exc}")
-        rings.append(summarize_ring(radius, pois, payload.business.business_type))
+        ring_summary = summarize_ring(radius, pois, payload.business.business_type)
+        ring_summary.update(
+            {
+                "declared_count": poi_result["declared_count"],
+                "pages_fetched": poi_result["pages_fetched"],
+                "truncated": poi_result["truncated"],
+            }
+        )
+        rings.append(ring_summary)
 
     financials = calculate_financials(request_dict["financial"])
     scoring = score_assessment(rings, financials, request_dict["business"])
@@ -55,6 +65,8 @@ async def analyze_location(payload: AnalyzeRequest) -> dict:
         "人流、消费能力、规划、夜间/周末热度为规则估算与 AI 研判。",
         "房价、城市更新、外卖价格和政策细则尚未接入真实数据源。",
     ]
+    if any(ring.get("truncated") for ring in rings):
+        notes.append("部分圈层 POI 达到分页上限，系统已标记 truncated=true，竞品和需求判断需谨慎。")
     notes.extend(errors)
     return {
         "data_notes": notes,

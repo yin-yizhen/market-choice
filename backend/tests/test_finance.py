@@ -1,7 +1,7 @@
 from app.services.finance import calculate_financials
 
 
-def test_calculate_financials_rolls_up_costs_and_runway():
+def test_calculate_financials_separates_opening_costs_from_runway_cash():
     result = calculate_financials(
         {
             "monthly_rent": 30000,
@@ -24,11 +24,15 @@ def test_calculate_financials_rolls_up_costs_and_runway():
 
     assert result["monthly_fixed_cost"] == 95000
     assert result["monthly_variable_cost"] == 58000
+    assert result["one_time_opening_cost"] == 450000
+    assert result["available_cash_reserve"] == 90000
     assert result["startup_cost"] == 540000
     assert result["break_even_revenue"] == 163794
     assert result["rent_to_revenue_ratio"] == 0.1667
-    assert result["survival_months_worst_case"] == 5.68
-    assert result["cash_pressure_level"] == "medium"
+    assert result["monthly_cash_burn_worst_case"] == 95000
+    assert result["monthly_loss_at_expected_revenue"] == 0
+    assert result["survival_months_worst_case"] == 0.95
+    assert result["cash_pressure_level"] == "high"
 
 
 def test_calculate_financials_handles_missing_revenue():
@@ -46,4 +50,5 @@ def test_calculate_financials_handles_missing_revenue():
     assert result["monthly_fixed_cost"] == 49000
     assert result["break_even_revenue"] == 98000
     assert result["rent_to_revenue_ratio"] is None
+    assert result["available_cash_reserve"] == 0
     assert result["survival_months_worst_case"] == 0

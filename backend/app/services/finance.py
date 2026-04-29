@@ -18,20 +18,26 @@ def calculate_financials(financial: dict) -> dict:
 
     monthly_fixed_cost = monthly_rent + property_fee + labor_cost + utilities_cost + marketing_cost
     monthly_variable_cost = raw_material_cost + platform_commission
-    startup_cost = (
+    one_time_opening_cost = (
         _money(financial.get("transfer_fee"))
         + _money(financial.get("deposit"))
         + _money(financial.get("renovation_cost"))
         + _money(financial.get("equipment_cost"))
         + _money(financial.get("license_cost"))
-        + _money(financial.get("working_capital"))
     )
+    available_cash_reserve = _money(financial.get("working_capital"))
+    startup_cost = one_time_opening_cost + available_cash_reserve
     break_even_revenue = int(-(-monthly_fixed_cost // gross_margin))
     rent_to_revenue_ratio = None
     if expected_revenue:
         rent_to_revenue_ratio = round(monthly_rent / float(expected_revenue), 4)
 
-    survival_months = round(startup_cost / monthly_fixed_cost, 2) if monthly_fixed_cost else 0
+    monthly_loss_at_expected_revenue = 0
+    if expected_revenue:
+        expected_gross_profit = float(expected_revenue) * gross_margin
+        monthly_loss_at_expected_revenue = max(monthly_fixed_cost - expected_gross_profit, 0)
+    monthly_cash_burn_worst_case = monthly_fixed_cost
+    survival_months = round(available_cash_reserve / monthly_cash_burn_worst_case, 2) if monthly_cash_burn_worst_case else 0
     pressure_ratio = rent_to_revenue_ratio if rent_to_revenue_ratio is not None else monthly_rent / max(break_even_revenue, 1)
     if pressure_ratio <= 0.12 and survival_months >= 4:
         pressure = "low"
@@ -43,8 +49,13 @@ def calculate_financials(financial: dict) -> dict:
     return {
         "monthly_fixed_cost": round(monthly_fixed_cost),
         "monthly_variable_cost": round(monthly_variable_cost),
+        "one_time_opening_cost": round(one_time_opening_cost),
+        "available_cash_reserve": round(available_cash_reserve),
+        "monthly_cash_burn_worst_case": round(monthly_cash_burn_worst_case),
+        "monthly_loss_at_expected_revenue": round(monthly_loss_at_expected_revenue),
         "startup_cost": round(startup_cost),
         "break_even_revenue": break_even_revenue,
+        "expected_monthly_revenue": round(float(expected_revenue)) if expected_revenue else None,
         "rent_to_revenue_ratio": rent_to_revenue_ratio,
         "survival_months_worst_case": survival_months,
         "cash_pressure_level": pressure,

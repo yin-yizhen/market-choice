@@ -304,10 +304,21 @@ function ReportPanel({ report }: { report: AnalysisResponse }) {
             <strong>{ring.radius}m</strong>
             <span>{ring.total} POI</span>
             <span>竞品 {ring.competitor_count}</span>
-            <span>互补 {ring.complementary_count}</span>
+            <span>{ring.truncated ? '已截断' : `互补 ${ring.complementary_count}`}</span>
           </div>
         ))}
       </div>
+
+      {report.scoring.business_metrics && (
+        <>
+          <h3>经营测算</h3>
+          <div className="report-grid">
+            <Metric label="保本日单量" value={`${report.scoring.business_metrics.break_even_daily_orders ?? 0} 单`} />
+            <Metric label="月坪效" value={`${report.scoring.business_metrics.monthly_revenue_per_sqm ?? '-'} 元/㎡`} />
+            <Metric label="人效" value={`${report.scoring.business_metrics.monthly_revenue_per_employee ?? '-'} 元/人`} />
+          </div>
+        </>
+      )}
 
       <h3>调研评分</h3>
       <div className="score-list">
@@ -336,6 +347,15 @@ function ReportPanel({ report }: { report: AnalysisResponse }) {
       <ul className="note-list">
         {report.data_notes.map((note) => <li key={note}>{note}</li>)}
       </ul>
+
+      {report.scoring.verification_required && (
+        <>
+          <h3>待线下核验</h3>
+          <ul className="note-list">
+            {report.scoring.verification_required.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </>
+      )}
     </section>
   );
 }

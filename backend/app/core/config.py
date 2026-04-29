@@ -1,5 +1,19 @@
 from functools import lru_cache
 from os import getenv
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+def load_environment() -> None:
+    backend_dir = Path(__file__).resolve().parents[2]
+    project_root = backend_dir.parent
+    for env_path in (project_root / ".env", backend_dir / ".env"):
+        if env_path.exists():
+            load_dotenv(env_path, override=False)
+
+
+load_environment()
 
 
 class Settings:
