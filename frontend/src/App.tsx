@@ -167,9 +167,13 @@ function MapCanvas({ selected }: { selected: LocationCandidate | null }) {
 
   useEffect(() => {
     const key = import.meta.env.VITE_AMAP_JS_API_KEY;
+    const securityJsCode = import.meta.env.VITE_AMAP_SECURITY_JS_CODE;
     if (!key || window.AMap) {
       setAmapReady(Boolean(window.AMap));
       return;
+    }
+    if (securityJsCode) {
+      window._AMapSecurityConfig = { securityJsCode };
     }
     const existing = document.querySelector<HTMLScriptElement>('script[data-amap-loader="true"]');
     if (existing) {
@@ -211,7 +215,7 @@ function MapCanvas({ selected }: { selected: LocationCandidate | null }) {
 
   return (
     <div className="map-canvas">
-      <div ref={mapRef} className={amapReady && selected ? 'amap-layer is-visible' : 'amap-layer'} />
+      <div ref={mapRef} className={amapReady && selected ? 'amap-host is-visible' : 'amap-host'} />
       <div className="grid-layer" />
       {selected ? (
         <div className="map-focus">

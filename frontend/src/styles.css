@@ -167,7 +167,7 @@ button:hover {
   background-size: 42px 42px;
 }
 
-.amap-layer {
+.amap-host {
   position: absolute;
   inset: 0;
   z-index: 3;
@@ -175,7 +175,7 @@ button:hover {
   pointer-events: none;
 }
 
-.amap-layer.is-visible {
+.amap-host.is-visible {
   opacity: 1;
   pointer-events: auto;
 }

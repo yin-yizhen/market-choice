@@ -1,10 +1,18 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
 
 describe('App', () => {
+  afterEach(() => {
+    document.querySelectorAll('script[data-amap-loader="true"]').forEach((script) => script.remove());
+    delete window.AMap;
+    delete window._AMapSecurityConfig;
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
   it('validates required location before analysis', async () => {
     render(<App />);
 
@@ -69,5 +77,27 @@ describe('App', () => {
     expect(await screen.findByText('综合得分 72')).toBeInTheDocument();
     expect(screen.getByText('竞品密度偏高')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith('/api/analyze-location', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('configures AMap security code before loading the map script', async () => {
+    vi.stubEnv('VITE_AMAP_JS_API_KEY', 'test-map-key');
+    vi.stubEnv('VITE_AMAP_SECURITY_JS_CODE', 'test-security-code');
+
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: '使用示例点位' }));
+
+    const script = document.querySelector<HTMLScriptElement>('script[data-amap-loader="true"]');
+    expect(window._AMapSecurityConfig).toEqual({ securityJsCode: 'test-security-code' });
+    expect(script?.src).toContain('key=test-map-key');
+  });
+
+  it('uses a map host class that does not collide with AMap internals', async () => {
+    vi.stubEnv('VITE_AMAP_JS_API_KEY', 'test-map-key');
+
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: '使用示例点位' }));
+
+    expect(document.querySelector('.amap-host')).toBeInTheDocument();
+    expect(document.querySelector('.map-canvas > .amap-layer')).not.toBeInTheDocument();
   });
 });

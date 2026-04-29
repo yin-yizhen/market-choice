@@ -15,6 +15,9 @@ type AMapCircleOptions = {
 
 declare global {
   interface Window {
+    _AMapSecurityConfig?: {
+      securityJsCode: string;
+    };
     AMap?: {
       Map: new (
         element: HTMLElement,
