@@ -1,8 +1,15 @@
+import io
+from urllib.error import HTTPError
+
 import pytest
 
+from app.core.config import get_settings
+from app.services import grounded_research
 from app.services.grounded_research import (
     GroundedResearchError,
     build_grounded_research_prompt,
+    default_dashscope_client,
+    default_gemini_client,
     parse_dashscope_agent_events,
     parse_gemini_grounding_response,
     run_grounded_research,
@@ -136,6 +143,51 @@ def test_parse_dashscope_agent_events_fails_without_sources():
 
     with pytest.raises(GroundedResearchError, match="没有返回可验证网页来源"):
         parse_dashscope_agent_events(events)
+
+
+@pytest.mark.asyncio
+async def test_default_dashscope_client_wraps_http_error(monkeypatch):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "configured")
+    monkeypatch.setenv("DASHSCOPE_WEB_SEARCH_AGENT_ID", "agent")
+    get_settings.cache_clear()
+
+    def failing_urlopen(*_args, **_kwargs):
+        raise HTTPError(
+            url="https://dashscope.aliyuncs.com",
+            code=401,
+            msg="Unauthorized",
+            hdrs=None,
+            fp=io.BytesIO(b'{"message":"Invalid API-key"}'),
+        )
+
+    monkeypatch.setattr(grounded_research.request, "urlopen", failing_urlopen)
+
+    with pytest.raises(GroundedResearchError, match="DashScope web-search agent HTTP failed: HTTP 401 Unauthorized"):
+        await default_dashscope_client("prompt")
+
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_default_gemini_client_wraps_http_error(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "configured")
+    get_settings.cache_clear()
+
+    def failing_urlopen(*_args, **_kwargs):
+        raise HTTPError(
+            url="https://generativelanguage.googleapis.com",
+            code=403,
+            msg="Forbidden",
+            hdrs=None,
+            fp=io.BytesIO(b'{"error":{"message":"permission denied"}}'),
+        )
+
+    monkeypatch.setattr(grounded_research.request, "urlopen", failing_urlopen)
+
+    with pytest.raises(GroundedResearchError, match="Gemini grounding HTTP failed: HTTP 403 Forbidden"):
+        await default_gemini_client("prompt")
+
+    get_settings.cache_clear()
 
 
 @pytest.mark.asyncio

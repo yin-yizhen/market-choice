@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from urllib import request
+from urllib import error, request
 
 from app.core.config import get_settings
 
@@ -34,6 +34,17 @@ URL_RE = re.compile(r"https?://[^\s\]\)>\"'，。；、]+")
 
 class GroundedResearchError(RuntimeError):
     pass
+
+
+def _format_http_error(exc: error.HTTPError) -> str:
+    try:
+        body = exc.read().decode("utf-8", errors="replace").strip()
+    except Exception:
+        body = ""
+    message = f"HTTP {exc.code} {exc.reason}"
+    if body:
+        message = f"{message}: {body[:500]}"
+    return message
 
 
 def build_grounded_research_prompt(payload: dict, poi_rings: list[dict], financials: dict) -> str:
@@ -336,8 +347,13 @@ async def default_gemini_client(prompt: str) -> dict:
         ensure_ascii=False,
     ).encode("utf-8")
     req = request.Request(url, data=body, method="POST", headers={"Content-Type": "application/json"})
-    with request.urlopen(req, timeout=45) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with request.urlopen(req, timeout=45) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        raise GroundedResearchError(f"Gemini grounding HTTP failed: {_format_http_error(exc)}") from exc
+    except error.URLError as exc:
+        raise GroundedResearchError(f"Gemini grounding network failed: {exc.reason}") from exc
 
 
 async def default_dashscope_client(prompt: str) -> list[dict]:
@@ -371,19 +387,24 @@ async def default_dashscope_client(prompt: str) -> list[dict]:
     )
 
     events = []
-    with request.urlopen(req, timeout=90) as response:
-        for raw_line in response:
-            line = raw_line.decode("utf-8").strip()
-            if not line or not line.startswith("data:"):
-                continue
-            payload = line[len("data:") :].strip()
-            if payload == "[DONE]":
-                break
-            event = json.loads(payload)
-            if event.get("code") and event.get("code") != "200":
-                raise GroundedResearchError(f"DashScope 联网检索 Agent 服务异常：{event}")
-            events.append(event)
-    return events
+    try:
+        with request.urlopen(req, timeout=90) as response:
+            for raw_line in response:
+                line = raw_line.decode("utf-8").strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                payload = line[len("data:") :].strip()
+                if payload == "[DONE]":
+                    break
+                event = json.loads(payload)
+                if event.get("code") and event.get("code") != "200":
+                    raise GroundedResearchError(f"DashScope 联网检索 Agent 服务异常：{event}")
+                events.append(event)
+        return events
+    except error.HTTPError as exc:
+        raise GroundedResearchError(f"DashScope web-search agent HTTP failed: {_format_http_error(exc)}") from exc
+    except error.URLError as exc:
+        raise GroundedResearchError(f"DashScope web-search agent network failed: {exc.reason}") from exc
 
 
 async def run_grounded_research(
