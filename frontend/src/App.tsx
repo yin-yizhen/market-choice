@@ -28,7 +28,7 @@ const demoLocation: LocationCandidate = {
   longitude: 121.4737,
 };
 
-type LoadingStep = 'idle' | 'poi' | 'research' | 'finance' | 'report';
+type LoadingStep = 'idle' | 'research';
 
 export default function App() {
   const [keyword, setKeyword] = useState('');
@@ -42,10 +42,7 @@ export default function App() {
   const [loadingStep, setLoadingStep] = useState<LoadingStep>('idle');
 
   const loadingLabel = useMemo(() => {
-    if (loadingStep === 'poi') return '正在分析 POI';
     if (loadingStep === 'research') return '正在联网检索公开资料';
-    if (loadingStep === 'finance') return '正在测算财务';
-    if (loadingStep === 'report') return '正在生成报告';
     return '';
   }, [loadingStep]);
 
@@ -69,11 +66,8 @@ export default function App() {
     }
     setError('');
     setReport(null);
-    setLoadingStep('poi');
+    setLoadingStep('research');
     try {
-      window.setTimeout(() => setLoadingStep('research'), 120);
-      window.setTimeout(() => setLoadingStep('finance'), 240);
-      window.setTimeout(() => setLoadingStep('report'), 360);
       const result = await analyzeLocation({ location: selected, business, financial });
       setReport(result);
     } catch (exc) {
@@ -306,10 +300,14 @@ function ReportPanel({ report }: { report: AnalysisResponse }) {
                 {category.sources.length > 0 ? (
                   <ul>
                     {category.sources.map((source) => (
-                      <li key={`${name}-${source.id}`}>
+                      <li key={`${name}-${source.id}-${source.url}`}>
                         <a href={source.url} target="_blank" rel="noreferrer">
                           {source.title || source.url}
                         </a>
+                        <span className="evidence-meta">
+                          查询：{source.search_query || '未返回'} · 置信度：{Math.round(source.confidence * 100)}%
+                        </span>
+                        {source.snippet && <span className="evidence-snippet">{source.snippet}</span>}
                       </li>
                     ))}
                   </ul>
@@ -319,14 +317,6 @@ function ReportPanel({ report }: { report: AnalysisResponse }) {
               </article>
             ))}
           </div>
-          {report.research_bundle.queries.length > 0 && (
-            <div className="query-list">
-              <strong>搜索查询</strong>
-              {report.research_bundle.queries.map((query) => (
-                <span key={query}>{query}</span>
-              ))}
-            </div>
-          )}
         </>
       )}
 

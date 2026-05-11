@@ -412,9 +412,21 @@ button:hover {
   padding-left: 18px;
 }
 
+.research-item li {
+  display: grid;
+  gap: 3px;
+}
+
 .research-item a {
   color: #1c5d81;
   overflow-wrap: anywhere;
+}
+
+.evidence-meta,
+.evidence-snippet {
+  color: #68756d;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .query-list {

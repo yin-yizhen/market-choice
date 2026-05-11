@@ -27,11 +27,11 @@ def _gemini_response_with_sources():
                 "groundingMetadata": {
                     "webSearchQueries": ["上海 南京西路 城市更新 商业 改造", "上海 静安区 餐饮 排烟 环保 许可"],
                     "groundingChunks": [
-                        {"web": {"uri": "https://example.gov.cn/plan", "title": "南京西路街区更新计划"}},
-                        {"web": {"uri": "https://example.gov.cn/policy", "title": "餐饮环保许可办事指南"}},
+                        {"web": {"uri": "https://example.gov.cn/plan", "title": "南京西路街区城市更新规划"}},
+                        {"web": {"uri": "https://example.gov.cn/policy", "title": "餐饮环保许可和排烟办事指南"}},
                     ],
                     "groundingSupports": [
-                        {"segment": {"text": "周边有道路提升和商业更新"}, "groundingChunkIndices": [0]},
+                        {"segment": {"text": "道路提升和商业更新"}, "groundingChunkIndices": [0]},
                         {"segment": {"text": "餐饮需重点核验排烟、环保和食品经营许可"}, "groundingChunkIndices": [1]},
                     ],
                 },
@@ -70,7 +70,7 @@ def _dashscope_events_with_sources():
                     {
                         "message": {
                             "role": "tool",
-                            "content": '[{"title":"南京西路街区更新计划","url":"https://example.gov.cn/plan","snippet":"道路提升和商业更新"}]',
+                            "content": '[{"title":"南京西路街区城市更新规划","url":"https://example.gov.cn/plan","snippet":"道路提升和商业更新","query":"上海 南京西路 城市更新 商业 改造"}]',
                         }
                     }
                 ]
@@ -92,16 +92,25 @@ def _dashscope_events_with_sources():
     ]
 
 
-def test_parse_gemini_grounding_response_extracts_queries_sources_and_categories():
+def test_parse_gemini_grounding_response_extracts_traceable_evidence():
     bundle = parse_gemini_grounding_response(_gemini_response_with_sources())
 
     assert bundle["provider"] == "gemini"
     assert bundle["source_count"] == 2
-    assert bundle["queries"] == ["上海 南京西路 城市更新 商业 改造", "上海 静安区 餐饮 排烟 环保 许可"]
-    assert bundle["sources"][0]["url"] == "https://example.gov.cn/plan"
-    assert bundle["categories"]["街区发展计划"]["confidence"] >= 0.6
-    assert "道路提升" in bundle["categories"]["街区发展计划"]["summary"]
-    assert bundle["categories"]["业态政策与证照"]["sources"][0]["title"] == "餐饮环保许可办事指南"
+    planning = bundle["categories"]["街区发展计划"]
+    assert planning["status"] == "supported"
+    assert planning["sources"][0]["url"] == "https://example.gov.cn/plan"
+    assert planning["sources"][0]["search_query"] == "上海 南京西路 城市更新 商业 改造"
+    assert planning["sources"][0]["confidence"] > 0
+    assert planning["sources"][0]["category"] == "街区发展计划"
+    assert "道路提升" in planning["sources"][0]["snippet"]
+
+
+def test_category_without_traceable_source_is_insufficient_even_if_answer_has_keywords():
+    bundle = parse_gemini_grounding_response(_gemini_response_with_sources())
+
+    assert bundle["categories"]["消费能力与人口画像"]["status"] == "insufficient"
+    assert bundle["categories"]["消费能力与人口画像"]["sources"] == []
 
 
 def test_parse_gemini_grounding_response_fails_without_sources():
@@ -117,9 +126,8 @@ def test_parse_dashscope_agent_events_extracts_sources_queries_and_categories():
     assert bundle["provider"] == "dashscope"
     assert bundle["source_count"] == 2
     assert bundle["queries"] == ["上海 南京西路 城市更新 商业 改造"]
-    assert bundle["sources"][0]["title"] == "南京西路街区更新计划"
-    assert bundle["sources"][1]["url"] == "https://example.gov.cn/policy"
     assert bundle["categories"]["街区发展计划"]["status"] == "supported"
+    assert bundle["categories"]["街区发展计划"]["sources"][0]["title"] == "南京西路街区城市更新规划"
     assert bundle["categories"]["业态政策与证照"]["status"] == "supported"
 
 

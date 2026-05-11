@@ -31,7 +31,7 @@ FRONTEND_ORIGIN=http://localhost:5173
 RESEARCH_MODE=llm_grounding
 LLM_GROUNDING_PROVIDER=dashscope
 DASHSCOPE_API_KEY=your-dashscope-api-key
-DASHSCOPE_WEB_SEARCH_AGENT_ID=aid-f598fea13bc64a75824ed53dee45d958
+DASHSCOPE_WEB_SEARCH_AGENT_ID=your-dashscope-web-search-agent-id
 DASHSCOPE_WEB_SEARCH_AGENT_VERSION=beta
 ```
 

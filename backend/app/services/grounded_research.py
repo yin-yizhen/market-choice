@@ -19,7 +19,7 @@ RESEARCH_CATEGORIES = [
 ]
 
 CATEGORY_KEYWORDS = {
-    "街区发展计划": ("规划", "更新", "改造", "施工", "地铁", "道路", "商业升级", "拆迁"),
+    "街区发展计划": ("规划", "更新", "改造", "施工", "地铁", "道路", "商业升级", "拆迁", "城市更新"),
     "人流与交通": ("人流", "客流", "交通", "地铁", "公交", "通勤", "停车"),
     "商圈结构": ("商圈", "商业", "目的地", "路过", "购物中心", "街区"),
     "消费能力与人口画像": ("消费", "房价", "写字楼", "客单价", "人口", "收入", "商场"),
@@ -29,7 +29,7 @@ CATEGORY_KEYWORDS = {
     "夜间/周末人气": ("夜间", "夜经济", "周末", "文旅", "休闲", "夜市"),
 }
 
-URL_RE = re.compile(r"https?://[^\s\]）)>\"']+")
+URL_RE = re.compile(r"https?://[^\s\]\)>\"'，。；、]+")
 
 
 class GroundedResearchError(RuntimeError):
@@ -40,7 +40,7 @@ def build_grounded_research_prompt(payload: dict, poi_rings: list[dict], financi
     location = payload.get("location", {})
     business = payload.get("business", {})
     content = {
-        "目标": "为店铺选址生成真实联网调研证据包，不要编造没有来源的结论。",
+        "目标": "为店铺选址生成真实联网调研证据包。不要编造没有来源的结论。",
         "位置": location,
         "业态": business,
         "三圈层POI摘要": poi_rings,
@@ -48,7 +48,7 @@ def build_grounded_research_prompt(payload: dict, poi_rings: list[dict], financi
         "必须调研的类别": RESEARCH_CATEGORIES,
         "输出要求": [
             "用中文分条总结每个类别。",
-            "每个判断都尽量基于公开网页来源。",
+            "每个判断都必须尽量基于公开网页来源。",
             "如果没有证据，明确写证据不足，不要编造。",
             "重点回答需求、人流、竞争、价格带、租金承压、政策证照、未来1-3年街区趋势。",
             "尽量在回答末尾列出参考来源标题和URL。",
@@ -60,6 +60,17 @@ def build_grounded_research_prompt(payload: dict, poi_rings: list[dict], financi
 def _candidate_text(candidate: dict) -> str:
     parts = candidate.get("content", {}).get("parts", [])
     return "\n".join(str(part.get("text", "")) for part in parts if isinstance(part, dict)).strip()
+
+
+def _support_text_by_source(metadata: dict, source_index: int) -> str:
+    texts = []
+    for support in metadata.get("groundingSupports", []) or []:
+        indices = support.get("groundingChunkIndices", []) if isinstance(support, dict) else []
+        if source_index in indices:
+            segment = support.get("segment", {})
+            if isinstance(segment, dict) and segment.get("text"):
+                texts.append(segment["text"])
+    return "；".join(texts)
 
 
 def _extract_gemini_sources(metadata: dict) -> list[dict]:
@@ -83,43 +94,79 @@ def _extract_gemini_sources(metadata: dict) -> list[dict]:
     return sources
 
 
-def _support_text_by_source(metadata: dict, source_index: int) -> str:
-    texts = []
-    for support in metadata.get("groundingSupports", []) or []:
-        indices = support.get("groundingChunkIndices", []) if isinstance(support, dict) else []
-        if source_index in indices:
-            segment = support.get("segment", {})
-            if isinstance(segment, dict) and segment.get("text"):
-                texts.append(segment["text"])
-    return "；".join(texts)
+def _best_search_query(queries: list[str], category: str, source: dict, snippet: str) -> str:
+    if not queries:
+        return ""
+    keywords = CATEGORY_KEYWORDS.get(category, ())
+    best_query = queries[0]
+    best_score = -1
+    for query in queries:
+        haystack = f"{query} {source.get('title', '')} {snippet}".lower()
+        score = sum(1 for keyword in keywords if keyword.lower() in haystack)
+        if score > best_score:
+            best_query = query
+            best_score = score
+    return best_query
 
 
-def _build_categories(answer: str, sources: list[dict], metadata: dict | None = None) -> dict:
+def _evidence_from_source(source: dict, category: str, snippet: str, queries: list[str], confidence: float) -> dict:
+    return {
+        "id": source.get("id", ""),
+        "title": source.get("title") or source.get("url") or "",
+        "url": source.get("url", ""),
+        "search_query": source.get("search_query") or _best_search_query(queries, category, source, snippet),
+        "confidence": round(confidence, 2),
+        "category": category,
+        "snippet": snippet[:260],
+    }
+
+
+def _build_categories(answer: str, sources: list[dict], queries: list[str], metadata: dict | None = None) -> dict:
     categories = {}
-    lower_answer = answer.lower()
     metadata = metadata or {}
     for name in RESEARCH_CATEGORIES:
         keywords = CATEGORY_KEYWORDS[name]
         matched_sources = []
         for source in sources:
             support = _support_text_by_source(metadata, source.get("index", -1))
-            haystack = f"{source.get('title', '')} {source.get('snippet', '')} {support}".lower()
+            snippet = source.get("snippet") or support
+            haystack = f"{source.get('title', '')} {snippet}".lower()
             if any(keyword.lower() in haystack for keyword in keywords):
-                matched_sources.append({key: source[key] for key in ("id", "title", "url") if key in source})
-        supported = bool(matched_sources) or any(keyword.lower() in lower_answer for keyword in keywords)
-        summary = _extract_category_summary(answer, name) if supported else "未找到足够公开资料，需线下核验。"
-        confidence = min(0.92, 0.45 + len(matched_sources) * 0.18) if supported else 0.25
-        categories[name] = {
-            "status": "supported" if supported else "insufficient",
-            "summary": summary,
-            "confidence": round(confidence, 2),
-            "sources": matched_sources,
-        }
+                confidence = min(0.92, 0.58 + len(matched_sources) * 0.12)
+                matched_sources.append(_evidence_from_source(source, name, snippet, queries, confidence))
+
+        if matched_sources:
+            categories[name] = {
+                "status": "supported",
+                "summary": _extract_category_summary(answer, name),
+                "confidence": round(min(0.92, 0.5 + len(matched_sources) * 0.16), 2),
+                "sources": matched_sources,
+            }
+        else:
+            categories[name] = {
+                "status": "insufficient",
+                "summary": "未找到可追溯到该类别的公开网页证据，需线下核验。",
+                "confidence": 0.2,
+                "sources": [],
+            }
     return categories
 
 
+def _flatten_evidence(categories: dict) -> list[dict]:
+    evidence = []
+    seen: set[tuple[str, str]] = set()
+    for category in categories.values():
+        for source in category.get("sources", []):
+            key = (source.get("category", ""), source.get("url", ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            evidence.append(source)
+    return evidence
+
+
 def _extract_category_summary(answer: str, category: str) -> str:
-    lines = [line.strip("- 　") for line in answer.splitlines() if line.strip()]
+    lines = [line.strip("- 、") for line in answer.splitlines() if line.strip()]
     for line in lines:
         if category[:2] in line or any(keyword in line for keyword in CATEGORY_KEYWORDS[category]):
             return line[:220]
@@ -134,18 +181,19 @@ def parse_gemini_grounding_response(response: dict) -> dict:
     metadata = candidate.get("groundingMetadata") or {}
     answer = _candidate_text(candidate)
     queries = metadata.get("webSearchQueries") or []
-    sources = _extract_gemini_sources(metadata)
-    if not sources:
+    raw_sources = _extract_gemini_sources(metadata)
+    if not raw_sources:
         raise GroundedResearchError("Gemini grounding 没有返回可验证网页来源")
 
-    categories = _build_categories(answer, sources, metadata)
+    categories = _build_categories(answer, raw_sources, queries, metadata)
+    evidence_sources = _flatten_evidence(categories)
     return {
         "required": True,
         "provider": "gemini",
         "answer": answer,
         "queries": queries,
-        "sources": [{key: source.get(key) for key in ("id", "title", "url", "score")} for source in sources],
-        "source_count": len(sources),
+        "sources": evidence_sources,
+        "source_count": len(raw_sources),
         "categories": categories,
     }
 
@@ -183,13 +231,25 @@ def _extract_dashscope_sources(events: list[dict]) -> list[dict]:
                         "title": value.get("title") or value.get("name") or url,
                         "url": url,
                         "snippet": value.get("snippet") or value.get("summary") or value.get("content") or "",
+                        "search_query": value.get("query") or value.get("search_query") or "",
                     }
                 )
         elif isinstance(value, str):
-            for url in URL_RE.findall(value):
+            for match in URL_RE.finditer(value):
+                url = match.group(0)
                 if url not in seen:
                     seen.add(url)
-                    sources.append({"id": f"S{len(sources) + 1}", "title": url, "url": url, "snippet": ""})
+                    start = max(0, match.start() - 120)
+                    end = min(len(value), match.end() + 40)
+                    sources.append(
+                        {
+                            "id": f"S{len(sources) + 1}",
+                            "title": url,
+                            "url": url,
+                            "snippet": value[start:end],
+                            "search_query": "",
+                        }
+                    )
     return sources
 
 
@@ -241,18 +301,19 @@ def parse_dashscope_agent_events(events: list[dict]) -> dict:
         else:
             answer = _append_stream_text(answer, content)
 
-    sources = _extract_dashscope_sources(events)
-    if not sources:
+    raw_sources = _extract_dashscope_sources(events)
+    if not raw_sources:
         raise GroundedResearchError("DashScope 联网检索 Agent 没有返回可验证网页来源")
+    queries = _extract_dashscope_queries(events)
     full_answer = answer.strip() or "\n".join(tool_texts).strip()
-    categories = _build_categories(full_answer, sources)
+    categories = _build_categories(full_answer, raw_sources, queries)
     return {
         "required": True,
         "provider": "dashscope",
         "answer": full_answer,
-        "queries": _extract_dashscope_queries(events),
-        "sources": [{key: source.get(key) for key in ("id", "title", "url")} for source in sources],
-        "source_count": len(sources),
+        "queries": queries,
+        "sources": _flatten_evidence(categories),
+        "source_count": len(raw_sources),
         "categories": categories,
     }
 

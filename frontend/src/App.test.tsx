@@ -32,15 +32,35 @@ function mockSuccessFetch() {
         cash_pressure_level: 'medium',
       },
       research_bundle: {
-        provider: 'gemini',
+        provider: 'dashscope',
         queries: ['上海 南京西路 城市更新 商业 改造'],
-        sources: [{ id: 'S1', title: '南京西路街区更新计划', url: 'https://example.gov.cn/plan' }],
+        sources: [
+          {
+            id: 'S1',
+            title: '南京西路街区城市更新规划',
+            url: 'https://example.gov.cn/plan',
+            search_query: '上海 南京西路 城市更新 商业 改造',
+            confidence: 0.66,
+            category: '街区发展计划',
+            snippet: '道路提升和商业更新',
+          },
+        ],
         categories: {
           街区发展计划: {
             status: 'supported',
             summary: '公开资料显示周边有道路提升和商业更新。',
             confidence: 0.82,
-            sources: [{ id: 'S1', title: '南京西路街区更新计划', url: 'https://example.gov.cn/plan' }],
+            sources: [
+              {
+                id: 'S1',
+                title: '南京西路街区城市更新规划',
+                url: 'https://example.gov.cn/plan',
+                search_query: '上海 南京西路 城市更新 商业 改造',
+                confidence: 0.66,
+                category: '街区发展计划',
+                snippet: '道路提升和商业更新',
+              },
+            ],
           },
         },
       },
@@ -51,7 +71,7 @@ function mockSuccessFetch() {
       },
       report: {
         source: 'fallback',
-        markdown: '## 关键结论\n这个点位有机会，但需要控制租金。',
+        markdown: '## 关键结论\n这个点位有机会，但需要控制租金。\n## 联网调研证据\n- 南京西路街区城市更新规划',
         ai_error: 'LLM_API_KEY is not configured',
       },
     });
@@ -92,22 +112,35 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: '生成选址报告' }));
 
     expect(await screen.findByText('综合得分 72')).toBeInTheDocument();
-    expect(screen.getByText('联网调研证据')).toBeInTheDocument();
-    expect(screen.getByText('南京西路街区更新计划')).toHaveAttribute('href', 'https://example.gov.cn/plan');
+    expect(screen.getAllByText('联网调研证据').length).toBeGreaterThan(0);
+    expect(screen.getByText('南京西路街区城市更新规划')).toHaveAttribute('href', 'https://example.gov.cn/plan');
+    expect(screen.getByText(/查询：上海 南京西路 城市更新 商业 改造/)).toBeInTheDocument();
+    expect(screen.getByText(/置信度：66%/)).toBeInTheDocument();
+    expect(screen.getByText('道路提升和商业更新')).toBeInTheDocument();
     expect(screen.getByText('竞品密度偏高')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith('/api/analyze-location', expect.objectContaining({ method: 'POST' }));
   });
 
+  it('shows the research loading state immediately after submit', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>(() => {}));
+
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: '使用示例点位' }));
+    await userEvent.click(screen.getByRole('button', { name: '生成选址报告' }));
+
+    expect(screen.getByRole('button', { name: /正在联网检索公开资料/ })).toBeDisabled();
+  });
+
   it('shows a clear research failure error', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
-      Response.json({ detail: '联网调研失败：GEMINI_API_KEY is not configured' }, { status: 503 }),
+      Response.json({ detail: '联网调研失败：DASHSCOPE_API_KEY is not configured' }, { status: 503 }),
     );
 
     render(<App />);
     await userEvent.click(screen.getByRole('button', { name: '使用示例点位' }));
     await userEvent.click(screen.getByRole('button', { name: '生成选址报告' }));
 
-    expect(await screen.findByText('联网调研失败：GEMINI_API_KEY is not configured')).toBeInTheDocument();
+    expect(await screen.findByText('联网调研失败：DASHSCOPE_API_KEY is not configured')).toBeInTheDocument();
   });
 
   it('configures AMap security code before loading the map script', async () => {

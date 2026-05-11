@@ -25,6 +25,10 @@ export type ResearchSource = {
   id: string;
   title: string;
   url: string;
+  search_query: string;
+  confidence: number;
+  category: string;
+  snippet: string;
   score?: number | null;
 };
 
@@ -32,7 +36,7 @@ export type ResearchCategory = {
   status: 'supported' | 'insufficient';
   summary: string;
   confidence: number;
-  sources: Array<Pick<ResearchSource, 'id' | 'title' | 'url'>>;
+  sources: ResearchSource[];
 };
 
 export type ResearchBundle = {

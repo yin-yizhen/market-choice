@@ -23,7 +23,7 @@ class Settings:
     llm_model: str = getenv("LLM_MODEL", "gpt-4o-mini")
     frontend_origin: str = getenv("FRONTEND_ORIGIN", "http://localhost:5173")
     research_mode: str = getenv("RESEARCH_MODE", "llm_grounding")
-    llm_grounding_provider: str = getenv("LLM_GROUNDING_PROVIDER", "gemini")
+    llm_grounding_provider: str = getenv("LLM_GROUNDING_PROVIDER", "dashscope")
     gemini_api_key: str = getenv("GEMINI_API_KEY", "")
     gemini_grounding_model: str = getenv("GEMINI_GROUNDING_MODEL", "gemini-2.5-pro")
     dashscope_api_key: str = getenv("DASHSCOPE_API_KEY", "")

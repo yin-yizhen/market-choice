@@ -64,10 +64,27 @@ def _research_lines(research_bundle: dict | None) -> list[str]:
         return ["- 未提供联网证据，相关结论需线下核验。"]
     lines = []
     for name, category in research_bundle.get("categories", {}).items():
-        lines.append(f"- {name}: {category.get('summary', '证据不足')}（置信度 {category.get('confidence', 0)}）")
-    for source in research_bundle.get("sources", [])[:6]:
-        lines.append(f"- 来源：{source.get('title') or source.get('url')} {source.get('url')}")
+        status = "有来源" if category.get("status") == "supported" and category.get("sources") else "证据不足"
+        lines.append(f"- {name}: {status}；置信度 {category.get('confidence', 0)}；{category.get('summary', '')}")
+        for source in category.get("sources", []):
+            lines.append(
+                "- 证据："
+                f"{source.get('title') or source.get('url')} | "
+                f"{source.get('url')} | "
+                f"查询：{source.get('search_query', '')} | "
+                f"置信度：{source.get('confidence', 0)}"
+            )
     return lines or ["- 未提供联网证据，相关结论需线下核验。"]
+
+
+def _research_markdown_section(research_bundle: dict | None) -> str:
+    return "\n".join(["", "## 联网调研证据", *_research_lines(research_bundle), ""])
+
+
+def _ensure_research_section(markdown: str, research_bundle: dict | None) -> str:
+    if "联网调研证据" in markdown:
+        return markdown
+    return f"{markdown.rstrip()}{_research_markdown_section(research_bundle)}"
 
 
 def _fallback_markdown(
@@ -89,7 +106,7 @@ def _fallback_markdown(
     score_lines = [f"- {name}: {score} 分" for name, score in scores.items()]
     metrics = scoring.get("business_metrics", {})
     verification = scoring.get("verification_required", [])
-    return "\n".join(
+    markdown = "\n".join(
         [
             "## 关键结论",
             f"{location.get('address', '当前点位')} 的 {business.get('business_type', '目标业态')} 选址综合得分为 {scoring.get('overall_score', 0)} 分。",
@@ -97,9 +114,6 @@ def _fallback_markdown(
             "",
             "## 三圈层业态",
             *ring_lines,
-            "",
-            "## 联网证据",
-            *_research_lines(research_bundle),
             "",
             "## 财务承压",
             f"- 保本月营业额约 {financials.get('break_even_revenue', 0)} 元",
@@ -114,12 +128,13 @@ def _fallback_markdown(
             *score_lines,
             "",
             "## 风险与建议",
-            *(risk_lines or ["- 暂未发现高风险，但需要实地踩点验证客流。"]),
+            *(risk_lines or ["- 暂未发现高风险，但需要实地踏点验证客流。"]),
             "",
             "## 待线下核验",
             *(f"- {item}" for item in verification),
         ]
     )
+    return _ensure_research_section(markdown, research_bundle)
 
 
 async def generate_report(
@@ -133,7 +148,7 @@ async def generate_report(
     messages = build_report_prompt(payload, poi_rings, financials, scoring, research_bundle)
     try:
         markdown = await llm_client(messages)
-        return {"source": "llm", "markdown": markdown, "ai_error": None}
+        return {"source": "llm", "markdown": _ensure_research_section(markdown, research_bundle), "ai_error": None}
     except Exception as exc:
         return {
             "source": "fallback",

@@ -3,25 +3,6 @@ from __future__ import annotations
 from math import ceil
 
 
-SCORE_NAMES = [
-    "位置曝光",
-    "目标人流",
-    "消费能力",
-    "竞品压力",
-    "互补业态",
-    "交通便利",
-    "停车条件",
-    "未来规划",
-    "租金合理性",
-    "证照可行性",
-    "铺位硬件",
-    "线上热度",
-    "夜间人气",
-    "周末人气",
-    "风险因素",
-]
-
-
 def _clamp(value: float, low: int = 0, high: int = 100) -> int:
     return max(low, min(high, round(value)))
 
@@ -59,7 +40,7 @@ def _target_customer_bonus(target_customer: str, ring1000: dict) -> float:
 def _hours_bonus(opening_hours: str, ring1000: dict) -> float:
     hours = opening_hours.lower()
     food_leisure = _category_total(ring1000, "food", "leisure")
-    if any(token in hours for token in ("22", "23", "24", "晚", "夜")):
+    if any(token in hours for token in ("22", "23", "24", "夜", "晚")):
         return min(food_leisure * 0.6, 12)
     if any(token in hours for token in ("08", "7", "早")):
         return min(_category_total(ring1000, "office", "transport") * 0.5, 8)
@@ -70,7 +51,7 @@ def _evidence_confidence(research_bundle: dict | None, category: str) -> float:
     if not research_bundle:
         return 0.0
     evidence = research_bundle.get("categories", {}).get(category, {})
-    if evidence.get("status") != "supported":
+    if evidence.get("status") != "supported" or not evidence.get("sources"):
         return 0.0
     return float(evidence.get("confidence") or 0)
 
@@ -161,7 +142,7 @@ def score_assessment(
     if scores["停车条件"] < 55:
         risk_factors.append("停车条件不足，可能影响目的型消费和周末客流。")
     if scores["目标人流"] < 60:
-        risk_factors.append("目标客群 POI 支撑不足，需要线下踩点验证真实人流。")
+        risk_factors.append("目标客群 POI 支撑不足，需要线下蹲点验证真实人流。")
     if daily_orders >= 220:
         risk_factors.append(f"按当前客单价测算，保本需要约 {daily_orders} 单/日，需验证门店产能和时段客流。")
     if not risk_factors:
@@ -181,7 +162,7 @@ def score_assessment(
         weighted_total += score * weight
         weight_sum += weight
 
-    note = "POI 为真实地图数据；人流、消费能力、规划、夜间/周末热度结合规则估算、联网证据和 AI 研判。"
+    note = "POI 为真实地图数据；人流、消费能力、规划、夜间/周末热度结合规则估算、可追溯联网证据和 AI 研判。无来源类别不参与加分。"
     return {
         "overall_score": _clamp(weighted_total / weight_sum),
         "scores": scores,
