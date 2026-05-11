@@ -11,6 +11,10 @@ PAGE_SIZE = 25
 MAX_PAGES = 20
 
 
+def _text_value(value, fallback: str = "") -> str:
+    return value if isinstance(value, str) and value else fallback
+
+
 def _get_json(path: str, params: dict) -> dict:
     settings = get_settings()
     if not settings.amap_web_service_key:
@@ -37,13 +41,36 @@ def geocode(keyword: str, city: str = "") -> list[dict]:
             {
                 "name": item.get("formatted_address", keyword),
                 "address": item.get("formatted_address", keyword),
-                "city": item.get("city", city) if isinstance(item.get("city"), str) else city,
-                "district": item.get("district", ""),
+                "city": _text_value(item.get("city"), city),
+                "district": _text_value(item.get("district")),
                 "latitude": latitude,
                 "longitude": longitude,
             }
         )
     return candidates
+
+
+def reverse_geocode(latitude: float, longitude: float) -> dict:
+    data = _get_json(
+        "geocode/regeo",
+        {
+            "location": f"{longitude},{latitude}",
+            "extensions": "base",
+            "radius": 1000,
+        },
+    )
+    regeocode = data.get("regeocode", {})
+    component = regeocode.get("addressComponent", {})
+    city = _text_value(component.get("city"), _text_value(component.get("province")))
+    address = regeocode.get("formatted_address") or f"{latitude:.6f},{longitude:.6f}"
+    return {
+        "name": address,
+        "address": address,
+        "city": city,
+        "district": _text_value(component.get("district")),
+        "latitude": latitude,
+        "longitude": longitude,
+    }
 
 
 def search_pois_around_detailed(latitude: float, longitude: float, radius: int) -> dict:

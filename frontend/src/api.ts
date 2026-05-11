@@ -10,6 +10,16 @@ export async function geocode(keyword: string, city: string): Promise<LocationCa
   return response.json();
 }
 
+export async function reverseGeocode(latitude: number, longitude: number): Promise<LocationCandidate> {
+  const params = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude) });
+  const response = await fetch(`/api/reverse-geocode?${params.toString()}`);
+  if (!response.ok) {
+    const message = await readError(response);
+    throw new Error(message || '逆地理编码失败');
+  }
+  return response.json();
+}
+
 export async function analyzeLocation(input: {
   location: LocationCandidate & { district_note?: string };
   business: BusinessInput;

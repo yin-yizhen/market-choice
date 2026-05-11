@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.schemas import AnalyzeRequest, AnalyzeResponse, GeocodeCandidate
-from app.services.amap import geocode, search_pois_around_detailed
+from app.services.amap import geocode, reverse_geocode, search_pois_around_detailed
 from app.services.assumptions import infer_target_customer
 from app.services.finance import calculate_financials
 from app.services.grounded_research import GroundedResearchError, run_grounded_research
@@ -32,6 +32,14 @@ def health() -> dict:
 def geocode_endpoint(keyword: str, city: str = "") -> list[dict]:
     try:
         return geocode(keyword, city)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/reverse-geocode", response_model=GeocodeCandidate)
+def reverse_geocode_endpoint(latitude: float, longitude: float) -> dict:
+    try:
+        return reverse_geocode(latitude, longitude)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

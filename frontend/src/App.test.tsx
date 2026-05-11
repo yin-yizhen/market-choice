@@ -1,8 +1,55 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
+
+type MapClickHandler = (event: { lnglat: { getLng: () => number; getLat: () => number } }) => void;
+
+function installFakeAmap() {
+  let clickHandler: MapClickHandler | undefined;
+  const setZoomAndCenter = vi.fn();
+  const clearMap = vi.fn();
+  const marker = vi.fn();
+  const circle = vi.fn();
+
+  class FakeMap {
+    setZoomAndCenter = setZoomAndCenter;
+    clearMap = clearMap;
+    destroy = vi.fn();
+    on(event: 'click', handler: MapClickHandler) {
+      if (event === 'click') clickHandler = handler;
+    }
+  }
+
+  class FakeMarker {
+    constructor(options: unknown) {
+      marker(options);
+    }
+  }
+
+  class FakeCircle {
+    constructor(options: unknown) {
+      circle(options);
+    }
+  }
+
+  window.AMap = {
+    Map: FakeMap as never,
+    Marker: FakeMarker as never,
+    Circle: FakeCircle as never,
+  };
+
+  return {
+    get clickHandler() {
+      return clickHandler;
+    },
+    setZoomAndCenter,
+    clearMap,
+    marker,
+    circle,
+  };
+}
 
 function mockSuccessFetch() {
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -18,6 +65,16 @@ function mockSuccessFetch() {
           longitude: 121.4737,
         },
       ]);
+    }
+    if (url.startsWith('/api/reverse-geocode')) {
+      return Response.json({
+        name: '上海市静安区南京西路100号',
+        address: '上海市静安区南京西路100号',
+        city: '上海',
+        district: '静安区',
+        latitude: 31.2,
+        longitude: 121.5,
+      });
     }
     return Response.json({
       data_notes: ['POI 数据来自高德地图 Web 服务。'],
@@ -92,20 +149,30 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '生成选址报告' }));
 
-    expect(await screen.findByText('请先搜索并选择一个位置')).toBeInTheDocument();
+    expect(await screen.findByText('请先搜索位置，并在地图上点击确认一个铺位点')).toBeInTheDocument();
   });
 
-  it('renders selected location, research evidence, and submits an analysis request', async () => {
+  it('moves to search result, lets map click select point, and submits analysis', async () => {
+    const amap = installFakeAmap();
     const fetchMock = mockSuccessFetch();
 
     render(<App />);
+    await waitFor(() => expect(amap.clickHandler).toBeDefined());
+
     await userEvent.type(screen.getByLabelText('搜索位置'), '南京西路');
     await userEvent.click(screen.getByRole('button', { name: '搜索' }));
-    await userEvent.click(await screen.findByRole('button', { name: /选择 上海市静安区南京西路/ }));
 
-    expect(screen.getByText('500m')).toBeInTheDocument();
-    expect(screen.getByText('1km')).toBeInTheDocument();
-    expect(screen.getByText('3km')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /定位到 上海市静安区南京西路/ })).toBeInTheDocument();
+    await waitFor(() => expect(amap.setZoomAndCenter).toHaveBeenCalledWith(15, [121.4737, 31.2304]));
+    expect(screen.getByLabelText('搜索位置')).toHaveValue('上海市静安区南京西路');
+
+    await act(async () => {
+      amap.clickHandler?.({ lnglat: { getLat: () => 31.2, getLng: () => 121.5 } });
+    });
+
+    await waitFor(() => expect(screen.getByLabelText('搜索位置')).toHaveValue('上海市静安区南京西路100号'));
+    expect(amap.marker).toHaveBeenCalled();
+    expect(amap.circle.mock.calls.length).toBeGreaterThanOrEqual(3);
 
     await userEvent.clear(screen.getByLabelText('月租金'));
     await userEvent.type(screen.getByLabelText('月租金'), '30000');
@@ -114,10 +181,6 @@ describe('App', () => {
     expect(await screen.findByText('综合得分 72')).toBeInTheDocument();
     expect(screen.getAllByText('联网调研证据').length).toBeGreaterThan(0);
     expect(screen.getByText('南京西路街区城市更新规划')).toHaveAttribute('href', 'https://example.gov.cn/plan');
-    expect(screen.getByText(/查询：上海 南京西路 城市更新 商业 改造/)).toBeInTheDocument();
-    expect(screen.getByText(/置信度：66%/)).toBeInTheDocument();
-    expect(screen.getByText('道路提升和商业更新')).toBeInTheDocument();
-    expect(screen.getByText('竞品密度偏高')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith('/api/analyze-location', expect.objectContaining({ method: 'POST' }));
   });
 

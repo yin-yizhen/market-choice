@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, BarChart3, Loader2, MapPin, Search, WalletCards } from 'lucide-react';
 
-import { analyzeLocation, geocode } from './api';
+import { analyzeLocation, geocode, reverseGeocode } from './api';
 import type { AnalysisResponse, BusinessInput, FinancialInput, LocationCandidate } from './types';
 import './styles.css';
 
@@ -34,6 +34,7 @@ export default function App() {
   const [keyword, setKeyword] = useState('');
   const [city, setCity] = useState('上海');
   const [candidates, setCandidates] = useState<LocationCandidate[]>([]);
+  const [mapCenter, setMapCenter] = useState<LocationCandidate | null>(null);
   const [selected, setSelected] = useState<LocationCandidate | null>(null);
   const [business, setBusiness] = useState<BusinessInput>(defaultBusiness);
   const [financial, setFinancial] = useState<FinancialInput>(defaultFinancial);
@@ -54,14 +55,53 @@ export default function App() {
     }
     setError('');
     setCandidates([]);
-    const result = await geocode(keyword.trim(), city.trim());
-    setCandidates(result);
-    if (result.length === 0) setError('没有找到候选位置，请换一个关键词');
+    setReport(null);
+    try {
+      const result = await geocode(keyword.trim(), city.trim());
+      setCandidates(result);
+      if (result.length === 0) {
+        setError('没有找到候选位置，请换一个关键词');
+        return;
+      }
+      const first = result[0];
+      setMapCenter(first);
+      setSelected(null);
+      setKeyword(first.address || first.name);
+      if (first.city) setCity(first.city);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : '位置搜索失败');
+    }
+  }
+
+  function applyPickedLocation(location: LocationCandidate) {
+    setSelected(location);
+    setMapCenter(location);
+    setKeyword(location.address || location.name);
+    if (location.city) setCity(location.city);
+    setReport(null);
+  }
+
+  async function handleMapPick(latitude: number, longitude: number) {
+    const fallback: LocationCandidate = {
+      name: `地图选点 ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+      address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+      city,
+      district: '',
+      latitude,
+      longitude,
+    };
+    applyPickedLocation(fallback);
+    try {
+      const resolved = await reverseGeocode(latitude, longitude);
+      applyPickedLocation(resolved);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : '逆地理编码失败');
+    }
   }
 
   async function handleAnalyze() {
     if (!selected) {
-      setError('请先搜索并选择一个位置');
+      setError('请先搜索位置，并在地图上点击确认一个铺位点');
       return;
     }
     setError('');
@@ -83,7 +123,7 @@ export default function App() {
         <div className="toolbar">
           <div>
             <h1>店铺选址评估</h1>
-            <p>搜索点位，填写经营与成本假设，生成三圈层调研报告。</p>
+            <p>搜索位置后地图会跳转到附近，在地图上点击铺位点完成选址。</p>
           </div>
           <span className="data-badge">高德 POI + AI 研判</span>
         </div>
@@ -101,24 +141,33 @@ export default function App() {
             <Search size={17} />
             搜索
           </button>
-          <button className="ghost-action" type="button" onClick={() => setSelected(demoLocation)}>
+          <button className="ghost-action" type="button" onClick={() => applyPickedLocation(demoLocation)}>
             使用示例点位
           </button>
         </form>
 
         {candidates.length > 0 && (
           <div className="candidate-list">
-            {candidates.map((candidate) => (
-              <button key={`${candidate.longitude}-${candidate.latitude}`} type="button" onClick={() => setSelected(candidate)}>
+            {candidates.map((candidate, index) => (
+              <button
+                key={`${candidate.longitude}-${candidate.latitude}-${index}`}
+                type="button"
+                onClick={() => {
+                  setMapCenter(candidate);
+                  setSelected(null);
+                  setKeyword(candidate.address || candidate.name);
+                  if (candidate.city) setCity(candidate.city);
+                }}
+              >
                 <MapPin size={16} />
-                选择 {candidate.name}
+                定位到 {candidate.name}
                 <span>{candidate.district || candidate.city}</span>
               </button>
             ))}
           </div>
         )}
 
-        <MapCanvas selected={selected} />
+        <MapCanvas center={mapCenter} selected={selected} onPick={handleMapPick} />
       </section>
 
       <aside className="control-panel">
@@ -143,9 +192,24 @@ export default function App() {
   );
 }
 
-function MapCanvas({ selected }: { selected: LocationCandidate | null }) {
+function MapCanvas({
+  center,
+  selected,
+  onPick,
+}: {
+  center: LocationCandidate | null;
+  selected: LocationCandidate | null;
+  onPick: (latitude: number, longitude: number) => void;
+}) {
   const mapRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<InstanceType<NonNullable<typeof window.AMap>['Map']> | null>(null);
+  const onPickRef = useRef(onPick);
   const [amapReady, setAmapReady] = useState(false);
+  const activeCenter = selected ?? center;
+
+  useEffect(() => {
+    onPickRef.current = onPick;
+  }, [onPick]);
 
   useEffect(() => {
     const key = import.meta.env.VITE_AMAP_JS_API_KEY;
@@ -171,53 +235,75 @@ function MapCanvas({ selected }: { selected: LocationCandidate | null }) {
   }, []);
 
   useEffect(() => {
-    if (!selected || !amapReady || !mapRef.current || !window.AMap) return;
-    const AMap = window.AMap;
-    const center: [number, number] = [selected.longitude, selected.latitude];
-    const map = new AMap.Map(mapRef.current, {
-      zoom: 15,
-      center,
+    if (!amapReady || !mapRef.current || !window.AMap || mapInstanceRef.current) return;
+    const defaultCenter: [number, number] = activeCenter ? [activeCenter.longitude, activeCenter.latitude] : [121.4737, 31.2304];
+    const map = new window.AMap.Map(mapRef.current, {
+      zoom: activeCenter ? 15 : 12,
+      center: defaultCenter,
       resizeEnable: true,
     });
-    new AMap.Marker({ position: center, map });
-    [500, 1000, 3000].forEach((radius) => {
-      new AMap.Circle({
-        center,
-        radius,
-        map,
-        strokeColor: radius === 500 ? '#a85d24' : radius === 1000 ? '#1c6a94' : '#1f6f4a',
-        strokeOpacity: 0.8,
-        strokeWeight: 2,
-        fillOpacity: 0.08,
-        fillColor: '#1f6f4a',
-      });
+    map.on('click', (event) => {
+      onPickRef.current(event.lnglat.getLat(), event.lnglat.getLng());
     });
-    return () => map.destroy();
-  }, [selected, amapReady]);
+    mapInstanceRef.current = map;
+    return () => {
+      map.destroy();
+      mapInstanceRef.current = null;
+    };
+  }, [amapReady]);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current || !window.AMap || !activeCenter) return;
+    const map = mapInstanceRef.current;
+    const point: [number, number] = [activeCenter.longitude, activeCenter.latitude];
+    map.setZoomAndCenter(15, point);
+    map.clearMap();
+    if (selected) {
+      new window.AMap.Marker({ position: point, map });
+      [500, 1000, 3000].forEach((radius) => {
+        new window.AMap!.Circle({
+          center: point,
+          radius,
+          map,
+          strokeColor: radius === 500 ? '#a85d24' : radius === 1000 ? '#1c6a94' : '#1f6f4a',
+          strokeOpacity: 0.8,
+          strokeWeight: 2,
+          fillOpacity: 0.08,
+          fillColor: '#1f6f4a',
+        });
+      });
+    }
+  }, [activeCenter, selected]);
 
   return (
     <div className="map-canvas">
-      <div ref={mapRef} className={amapReady && selected ? 'amap-host is-visible' : 'amap-host'} />
+      <div ref={mapRef} className={amapReady ? 'amap-host is-visible' : 'amap-host'} />
       <div className="grid-layer" />
-      {selected ? (
-        <div className="map-focus">
-          <div className="ring ring-3000"><span>3km</span></div>
-          <div className="ring ring-1000"><span>1km</span></div>
-          <div className="ring ring-500"><span>500m</span></div>
-          <div className="pin">
-            <MapPin size={22} />
+      {!amapReady && (
+        activeCenter ? (
+          <div className="map-focus">
+            {selected && (
+              <>
+                <div className="ring ring-3000"><span>3km</span></div>
+                <div className="ring ring-1000"><span>1km</span></div>
+                <div className="ring ring-500"><span>500m</span></div>
+              </>
+            )}
+            <div className="pin">
+              <MapPin size={22} />
+            </div>
+            <div className="location-card">
+              <strong>{activeCenter.name}</strong>
+              <span>{activeCenter.latitude.toFixed(4)}, {activeCenter.longitude.toFixed(4)}</span>
+            </div>
           </div>
-          <div className="location-card">
-            <strong>{selected.name}</strong>
-            <span>{selected.latitude.toFixed(4)}, {selected.longitude.toFixed(4)}</span>
+        ) : (
+          <div className="empty-map">
+            <MapPin size={28} />
+            <strong>先搜索位置，再在地图上点击铺位点</strong>
+            <span>点击地图后会显示 500m、1km、3km 三个评估圈层。</span>
           </div>
-        </div>
-      ) : (
-        <div className="empty-map">
-          <MapPin size={28} />
-          <strong>搜索并选择一个点位</strong>
-          <span>选择后会显示 500m、1km、3km 三个评估圈层。</span>
-        </div>
+        )
       )}
     </div>
   );

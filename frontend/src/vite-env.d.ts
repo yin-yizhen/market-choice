@@ -13,6 +13,20 @@ type AMapCircleOptions = {
   fillColor: string;
 };
 
+type AMapMapClickEvent = {
+  lnglat: {
+    getLng: () => number;
+    getLat: () => number;
+  };
+};
+
+type AMapMapInstance = {
+  destroy: () => void;
+  setZoomAndCenter: (zoom: number, center: AMapLngLat) => void;
+  clearMap: () => void;
+  on: (event: 'click', handler: (event: AMapMapClickEvent) => void) => void;
+};
+
 declare global {
   interface Window {
     _AMapSecurityConfig?: {
@@ -22,7 +36,7 @@ declare global {
       Map: new (
         element: HTMLElement,
         options: { zoom: number; center: AMapLngLat; resizeEnable: boolean },
-      ) => { destroy: () => void };
+      ) => AMapMapInstance;
       Marker: new (options: { position: AMapLngLat; map: unknown }) => unknown;
       Circle: new (options: AMapCircleOptions) => unknown;
     };
