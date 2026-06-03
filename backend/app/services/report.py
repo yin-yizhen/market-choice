@@ -65,15 +65,16 @@ def _research_lines(research_bundle: dict | None) -> list[str]:
     lines = []
     for name, category in research_bundle.get("categories", {}).items():
         status = "有来源" if category.get("status") == "supported" and category.get("sources") else "证据不足"
-        lines.append(f"- {name}: {status}；置信度 {category.get('confidence', 0)}；{category.get('summary', '')}")
-        for source in category.get("sources", []):
-            lines.append(
-                "- 证据："
-                f"{source.get('title') or source.get('url')} | "
-                f"{source.get('url')} | "
-                f"查询：{source.get('search_query', '')} | "
-                f"置信度：{source.get('confidence', 0)}"
-            )
+        confidence = round(float(category.get("confidence", 0)) * 100)
+        summary = category.get("summary", "")
+        lines.append(f"- {name}: {status}；置信度 {confidence}%；{summary}")
+        for source in category.get("sources", [])[:3]:
+            title = source.get("title") or source.get("url")
+            url = source.get("url")
+            query = source.get("search_query")
+            source_confidence = round(float(source.get("confidence", 0)) * 100)
+            meta = f"检索：{query}；" if query else ""
+            lines.append(f"  - 来源：{title}（{url}）；{meta}证据置信度：{source_confidence}%")
     return lines or ["- 未提供联网证据，相关结论需线下核验。"]
 
 

@@ -95,7 +95,7 @@ def score_assessment(
     runway_penalty = max(2 - survival, 0) * 6
     daily_orders = business_metrics["break_even_daily_orders"]
 
-    planning_confidence = _evidence_confidence(research_bundle, "街区发展计划")
+    planning_confidence = _evidence_confidence(research_bundle, "街区发展规划")
     policy_confidence = _evidence_confidence(research_bundle, "业态政策与证照")
     heat_confidence = _evidence_confidence(research_bundle, "线上热度")
     night_confidence = _evidence_confidence(research_bundle, "夜间/周末人气")

@@ -391,7 +391,8 @@ function ReportPanel({ report }: { report: AnalysisResponse }) {
                           {source.title || source.url}
                         </a>
                         <span className="evidence-meta">
-                          查询：{source.search_query || '未返回'} · 置信度：{Math.round(source.confidence * 100)}%
+                          {source.search_query ? `检索：${source.search_query} · ` : ''}
+                          置信度：{Math.round(source.confidence * 100)}%
                         </span>
                         {source.snippet && <span className="evidence-snippet">{source.snippet}</span>}
                       </li>

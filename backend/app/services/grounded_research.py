@@ -32,8 +32,79 @@ CATEGORY_KEYWORDS = {
 URL_RE = re.compile(r"https?://[^\s\]\)>\"'，。；、]+")
 
 
+RESEARCH_CATEGORIES = [
+    "街区发展规划",
+    "人流与交通",
+    "商圈结构",
+    "消费能力与人口画像",
+    "竞品与价格带",
+    "业态政策与证照",
+    "线上热度",
+    "夜间/周末人气",
+]
+
+CATEGORY_KEYWORDS = {
+    "街区发展规划": ("规划", "更新", "改造", "施工", "地铁", "道路", "商业升级", "拆迁", "城市更新"),
+    "人流与交通": ("人流", "客流", "交通", "地铁", "公交", "通勤", "停车"),
+    "商圈结构": ("商圈", "商业", "目的地", "路过", "购物中心", "街区"),
+    "消费能力与人口画像": ("消费", "房价", "写字楼", "客单价", "人口", "收入", "商场"),
+    "竞品与价格带": ("竞品", "价格", "咖啡", "餐饮", "外卖", "点评", "品牌"),
+    "业态政策与证照": ("政策", "证照", "排烟", "环保", "食品经营", "许可", "消防"),
+    "线上热度": ("小红书", "大众点评", "抖音", "热度", "评价", "打卡"),
+    "夜间/周末人气": ("夜间", "夜经济", "周末", "文旅", "休闲", "夜市"),
+}
+
+URL_RE = re.compile(r"https?://[^\s\]\)>\"'，。；、]+")
+MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^\s\)]+)\)")
+URL_HOST_RE = re.compile(r"^https?://([^/\s]+)")
+STATIC_ASSET_EXTENSIONS = (".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".css", ".js", ".woff", ".woff2")
+
+BUSINESS_SPECIFIC_CATEGORY_KEYWORDS = {
+    "game": {
+        "业态政策与证照": ("游戏游艺", "文化经营许可证", "娱乐场所", "未成年人保护", "消防验收", "文旅局", "市场监管"),
+        "竞品与价格带": ("主机游戏", "电玩", "PS5", "Switch", "Xbox", "游戏体验店", "桌游"),
+        "消费能力与人口画像": ("学生消费", "高校周边", "年轻客群", "大学城", "社群消费"),
+        "线上热度": ("小红书", "大众点评", "抖音", "主机游戏体验", "游戏店打卡"),
+        "夜间/周末人气": ("周末娱乐", "夜间娱乐", "大学生周末", "休闲娱乐"),
+    },
+    "food": {
+        "业态政策与证照": ("食品经营许可证", "餐饮服务", "排烟", "环保", "明厨亮灶", "消防"),
+        "竞品与价格带": ("餐饮", "咖啡", "外卖", "大众点评", "客单价"),
+        "线上热度": ("大众点评", "小红书", "抖音", "外卖", "打卡"),
+        "夜间/周末人气": ("夜经济", "夜市", "周末餐饮", "休闲消费"),
+    },
+}
+
+
 class GroundedResearchError(RuntimeError):
     pass
+
+
+def _business_keyword_group(business_type: str) -> str | None:
+    normalized = business_type.lower()
+    if any(token in normalized for token in ("主机", "游戏", "电玩", "桌游", "playstation", "ps5", "switch", "xbox")):
+        return "game"
+    if any(token in normalized for token in ("餐", "咖啡", "茶", "饮", "烘焙", "food", "coffee")):
+        return "food"
+    return None
+
+
+def _category_search_keywords(category: str, business: dict) -> list[str]:
+    keywords = list(CATEGORY_KEYWORDS.get(category, ()))
+    business_type = str(business.get("business_type") or "")
+    group = _business_keyword_group(business_type)
+    if group:
+        keywords.extend(BUSINESS_SPECIFIC_CATEGORY_KEYWORDS.get(group, {}).get(category, ()))
+    if business_type:
+        keywords.append(business_type)
+
+    deduped = []
+    seen = set()
+    for keyword in keywords:
+        if keyword and keyword not in seen:
+            seen.add(keyword)
+            deduped.append(keyword)
+    return deduped
 
 
 def _format_http_error(exc: error.HTTPError) -> str:
@@ -66,6 +137,30 @@ def build_grounded_research_prompt(payload: dict, poi_rings: list[dict], financi
         ],
     }
     return json.dumps(content, ensure_ascii=False)
+
+
+def build_category_grounded_research_prompt(payload: dict, poi_rings: list[dict], financials: dict, category: str) -> str:
+    location = payload.get("location", {})
+    business = payload.get("business", {})
+    keywords = " ".join(_category_search_keywords(category, business))
+    address = location.get("address") or location
+    city = location.get("city") or ""
+    business_type = business.get("business_type") or ""
+    return "\n".join(
+        [
+            "必须调用联网搜索工具，不要直接回答，不要仅凭模型知识回答。",
+            f"请搜索：{city} {address} {business_type} {category} {keywords}",
+            f"本次只调研类别：{category}",
+            f"位置：{json.dumps(location, ensure_ascii=False)}",
+            f"业态：{json.dumps(business, ensure_ascii=False)}",
+            f"三圈层POI摘要：{json.dumps(poi_rings, ensure_ascii=False)}",
+            f"财务测算：{json.dumps(financials, ensure_ascii=False)}",
+            "优先使用政府、商圈、交通、商业运营、主流媒体、平台公开页面等可追溯来源。",
+            "如果能找到来源，必须列出来源标题和完整URL。",
+            "如果没有证据，明确写证据不足，不要编造。",
+            "用中文总结该类别对店铺选址的影响。",
+        ]
+    )
 
 
 def _candidate_text(candidate: dict) -> str:
@@ -120,15 +215,44 @@ def _best_search_query(queries: list[str], category: str, source: dict, snippet:
     return best_query
 
 
+def _clean_search_query(query: str) -> str:
+    text = " ".join(str(query or "").split())
+    if not text:
+        return ""
+    marker = "请搜索："
+    if marker in text:
+        text = text.split(marker, 1)[1]
+        for stop in (" 本次只调研类别：", " 位置：", " 业态：", " 三圈层POI摘要：", " 财务测算："):
+            if stop in text:
+                text = text.split(stop, 1)[0]
+    noisy_phrases = (
+        "必须调用联网搜索工具",
+        "不要直接回答",
+        "不要仅凭模型知识回答",
+    )
+    for phrase in noisy_phrases:
+        text = text.replace(phrase, "")
+    text = " ".join(text.replace("。", " ").split())
+    return text[:120]
+
+
+def _clean_snippet(snippet: str) -> str:
+    text = " ".join(str(snippet or "").split())
+    if any(marker in text for marker in ("三圈层POI摘要", "财务测算", "必须调用联网搜索工具", "不要直接回答")):
+        return ""
+    return text[:180]
+
+
 def _evidence_from_source(source: dict, category: str, snippet: str, queries: list[str], confidence: float) -> dict:
+    search_query = source.get("search_query") or _best_search_query(queries, category, source, snippet)
     return {
         "id": source.get("id", ""),
         "title": source.get("title") or source.get("url") or "",
         "url": source.get("url", ""),
-        "search_query": source.get("search_query") or _best_search_query(queries, category, source, snippet),
+        "search_query": _clean_search_query(search_query),
         "confidence": round(confidence, 2),
         "category": category,
-        "snippet": snippet[:260],
+        "snippet": _clean_snippet(snippet),
     }
 
 
@@ -228,39 +352,89 @@ def _iter_values(value):
         yield value
 
 
-def _extract_dashscope_sources(events: list[dict]) -> list[dict]:
+def _clean_source_url(url: str) -> str | None:
+    cleaned = url.strip().rstrip(".,;:!?)]}】）。，；：！？")
+    host_match = URL_HOST_RE.match(cleaned)
+    if not host_match:
+        return None
+    host = host_match.group(1).lower()
+    if "." not in host:
+        return None
+    suffix = host.rsplit(".", 1)[-1]
+    if len(suffix) < 2 or not suffix.isalpha():
+        return None
+    path = cleaned.split("?", 1)[0].lower()
+    if path.endswith(STATIC_ASSET_EXTENSIONS):
+        return None
+    return cleaned
+
+
+def _source_url_is_reachable(url: str) -> bool:
+    try:
+        req = request.Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
+        with request.urlopen(req, timeout=4) as response:
+            status = getattr(response, "status", 200)
+            return 200 <= status < 400 or status in {401, 403, 405}
+    except error.HTTPError as exc:
+        return exc.code in {401, 403, 405}
+    except Exception:
+        return False
+
+
+def _append_source(
+    sources: list[dict],
+    seen: set[str],
+    title: str,
+    url: str,
+    snippet: str = "",
+    search_query: str = "",
+    validate_url: bool = False,
+) -> None:
+    cleaned_url = _clean_source_url(url)
+    if not cleaned_url or cleaned_url in seen:
+        return
+    if validate_url and not _source_url_is_reachable(cleaned_url):
+        return
+    seen.add(cleaned_url)
+    sources.append(
+        {
+            "id": f"S{len(sources) + 1}",
+            "title": title or cleaned_url,
+            "url": cleaned_url,
+            "snippet": _clean_snippet(snippet),
+            "search_query": _clean_search_query(search_query),
+        }
+    )
+
+
+def _extract_dashscope_sources(events: list[dict], validate_urls: bool = False) -> list[dict]:
     sources = []
     seen: set[str] = set()
     for value in _iter_values(events):
         if isinstance(value, dict):
             url = value.get("url") or value.get("link") or value.get("href")
-            if isinstance(url, str) and url.startswith(("http://", "https://")) and url not in seen:
-                seen.add(url)
-                sources.append(
-                    {
-                        "id": f"S{len(sources) + 1}",
-                        "title": value.get("title") or value.get("name") or url,
-                        "url": url,
-                        "snippet": value.get("snippet") or value.get("summary") or value.get("content") or "",
-                        "search_query": value.get("query") or value.get("search_query") or "",
-                    }
+            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                _append_source(
+                    sources,
+                    seen,
+                    value.get("title") or value.get("name") or url,
+                    url,
+                    value.get("snippet") or value.get("summary") or value.get("content") or "",
+                    value.get("query") or value.get("search_query") or "",
+                    validate_urls,
                 )
         elif isinstance(value, str):
+            for markdown_match in MARKDOWN_LINK_RE.finditer(value):
+                title = markdown_match.group(1).strip()
+                url = markdown_match.group(2)
+                start = max(0, markdown_match.start() - 120)
+                end = min(len(value), markdown_match.end() + 40)
+                _append_source(sources, seen, title, url, value[start:end], "", validate_urls)
             for match in URL_RE.finditer(value):
                 url = match.group(0)
-                if url not in seen:
-                    seen.add(url)
-                    start = max(0, match.start() - 120)
-                    end = min(len(value), match.end() + 40)
-                    sources.append(
-                        {
-                            "id": f"S{len(sources) + 1}",
-                            "title": url,
-                            "url": url,
-                            "snippet": value[start:end],
-                            "search_query": "",
-                        }
-                    )
+                start = max(0, match.start() - 120)
+                end = min(len(value), match.end() + 40)
+                _append_source(sources, seen, url, url, value[start:end], "", validate_urls)
     return sources
 
 
@@ -325,6 +499,79 @@ def parse_dashscope_agent_events(events: list[dict]) -> dict:
         "queries": queries,
         "sources": _flatten_evidence(categories),
         "source_count": len(raw_sources),
+        "categories": categories,
+    }
+
+
+def _dashscope_answer_and_tools(events: list[dict]) -> tuple[str, list[str]]:
+    answer = ""
+    tool_texts = []
+    for event in events:
+        msg = event.get("output", {}).get("choices", [{}])[0].get("message", {})
+        content = _message_content_as_text(msg.get("content") or msg.get("reasoning_content"))
+        if msg.get("role") == "tool":
+            tool_texts.append(content)
+        else:
+            answer = _append_stream_text(answer, content)
+    return answer.strip(), tool_texts
+
+
+def _insufficient_category() -> dict:
+    return {
+        "status": "insufficient",
+        "summary": "未找到可追溯到该类别的公开网页证据，需线下核验。",
+        "confidence": 0.2,
+        "sources": [],
+    }
+
+
+def parse_dashscope_category_event_groups(category_events: list[tuple[str, list[dict]]]) -> dict:
+    categories = {name: _insufficient_category() for name in RESEARCH_CATEGORIES}
+    all_queries = []
+    seen_queries: set[str] = set()
+    answers = []
+    raw_source_count = 0
+
+    for category, events in category_events:
+        answer, tool_texts = _dashscope_answer_and_tools(events)
+        full_answer = answer or "\n".join(tool_texts).strip()
+        if full_answer:
+            answers.append(full_answer)
+
+        queries = _extract_dashscope_queries(events)
+        for query in queries:
+            if query not in seen_queries:
+                seen_queries.add(query)
+                all_queries.append(query)
+
+        raw_sources = _extract_dashscope_sources(events, validate_urls=True)
+        raw_source_count += len(raw_sources)
+        if not raw_sources:
+            continue
+
+        evidence_sources = []
+        for index, source in enumerate(raw_sources):
+            snippet = source.get("snippet", "")
+            confidence = min(0.92, 0.58 + index * 0.12)
+            evidence_sources.append(_evidence_from_source(source, category, snippet, queries, confidence))
+
+        categories[category] = {
+            "status": "supported",
+            "summary": _extract_category_summary(full_answer, category),
+            "confidence": round(min(0.92, 0.5 + len(evidence_sources) * 0.16), 2),
+            "sources": evidence_sources,
+        }
+
+    if raw_source_count == 0:
+        raise GroundedResearchError("DashScope 联网检索 Agent 没有返回可验证网页来源")
+
+    return {
+        "required": True,
+        "provider": "dashscope",
+        "answer": "\n\n".join(answers),
+        "queries": all_queries,
+        "sources": _flatten_evidence(categories),
+        "source_count": raw_source_count,
         "categories": categories,
     }
 
@@ -425,6 +672,10 @@ async def run_grounded_research(
         response = await gemini_client(prompt)
         return parse_gemini_grounding_response(response)
     if selected_provider == "dashscope":
-        events = await dashscope_client(prompt)
-        return parse_dashscope_agent_events(events)
+        category_events = []
+        for category in RESEARCH_CATEGORIES:
+            category_prompt = build_category_grounded_research_prompt(payload, poi_rings, financials, category)
+            events = await dashscope_client(category_prompt)
+            category_events.append((category, events))
+        return parse_dashscope_category_event_groups(category_events)
     raise GroundedResearchError(f"Unsupported LLM_GROUNDING_PROVIDER: {selected_provider}")

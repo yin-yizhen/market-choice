@@ -105,7 +105,7 @@ def test_score_assessment_uses_only_sourced_research_evidence_for_bonus():
     financials = calculate_financials({"monthly_rent": 10000, "other_investment_total": 120000})
     sourced_bundle = {
         "categories": {
-            "街区发展计划": {
+            "街区发展规划": {
                 "status": "supported",
                 "confidence": 0.86,
                 "summary": "有商业更新和慢行优化",
@@ -133,7 +133,7 @@ def test_score_assessment_uses_only_sourced_research_evidence_for_bonus():
     }
     unsourced_bundle = {
         "categories": {
-            "街区发展计划": {"status": "supported", "confidence": 0.86, "summary": "只有模型判断", "sources": []},
+            "街区发展规划": {"status": "supported", "confidence": 0.86, "summary": "只有模型判断", "sources": []},
             "业态政策与证照": {"status": "supported", "confidence": 0.82, "summary": "只有模型判断", "sources": []},
             "线上热度": {"status": "supported", "confidence": 0.78, "summary": "只有模型判断", "sources": []},
             "夜间/周末人气": {"status": "supported", "confidence": 0.75, "summary": "只有模型判断", "sources": []},

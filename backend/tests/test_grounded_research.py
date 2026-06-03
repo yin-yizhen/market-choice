@@ -104,12 +104,12 @@ def test_parse_gemini_grounding_response_extracts_traceable_evidence():
 
     assert bundle["provider"] == "gemini"
     assert bundle["source_count"] == 2
-    planning = bundle["categories"]["街区发展计划"]
+    planning = bundle["categories"]["街区发展规划"]
     assert planning["status"] == "supported"
     assert planning["sources"][0]["url"] == "https://example.gov.cn/plan"
     assert planning["sources"][0]["search_query"] == "上海 南京西路 城市更新 商业 改造"
     assert planning["sources"][0]["confidence"] > 0
-    assert planning["sources"][0]["category"] == "街区发展计划"
+    assert planning["sources"][0]["category"] == "街区发展规划"
     assert "道路提升" in planning["sources"][0]["snippet"]
 
 
@@ -133,8 +133,8 @@ def test_parse_dashscope_agent_events_extracts_sources_queries_and_categories():
     assert bundle["provider"] == "dashscope"
     assert bundle["source_count"] == 2
     assert bundle["queries"] == ["上海 南京西路 城市更新 商业 改造"]
-    assert bundle["categories"]["街区发展计划"]["status"] == "supported"
-    assert bundle["categories"]["街区发展计划"]["sources"][0]["title"] == "南京西路街区城市更新规划"
+    assert bundle["categories"]["街区发展规划"]["status"] == "supported"
+    assert bundle["categories"]["街区发展规划"]["sources"][0]["title"] == "南京西路街区城市更新规划"
     assert bundle["categories"]["业态政策与证照"]["status"] == "supported"
 
 
@@ -191,7 +191,9 @@ async def test_default_gemini_client_wraps_http_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_grounded_research_can_use_dashscope_provider():
+async def test_run_grounded_research_can_use_dashscope_provider(monkeypatch):
+    monkeypatch.setattr(grounded_research, "_source_url_is_reachable", lambda _url: True)
+
     async def fake_dashscope_client(_prompt):
         return _dashscope_events_with_sources()
 
@@ -231,7 +233,7 @@ def test_build_grounded_research_prompt_contains_required_research_questions():
         financials={"break_even_revenue": 100000},
     )
 
-    assert "街区发展计划" in prompt
+    assert "街区发展规划" in prompt
     assert "消费能力与人口画像" in prompt
     assert "证照" in prompt
     assert "不要编造" in prompt
